@@ -1,0 +1,479 @@
+/*
+ * Locksidian: Stylesheet
+ * Refactored with bug fixes and improved layout
+ */
+
+/* ============================================================================
+   MAIN LOCKSCREEN & CORE STYLES
+   ============================================================================ */
+
+.locksidian-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10000;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #181818;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.locksidian-screen-loading {
+  /* No animations while loading */
+  animation: none !important;
+}
+
+.locksidian-screen-loading * {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+.locksidian-screen.is-leaving {
+  animation: fadeOutScreen 0.4s ease-out forwards;
+}
+
+@keyframes fadeOutScreen {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ============================================================================
+   TITLEBAR (for window dragging)
+   ============================================================================ */
+
+.locksidian-titlebar {
+  flex-shrink: 0;
+  height: 30px;
+  width: 100%;
+  -webkit-app-region: drag;
+  background: transparent;
+  z-index: 1;
+}
+
+/* ============================================================================
+   MAIN CONTENT AREA
+   ============================================================================ */
+
+.locksidian-main-content {
+  flex-grow: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInContent 0.6s 0.1s ease-in-out forwards;
+  opacity: 0;
+  /* Prevent content from being selectable */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@keyframes fadeInContent {
+  to { opacity: 1; }
+}
+
+/* ============================================================================
+   BACKGROUND MEDIA (video, image, or color)
+   ============================================================================ */
+
+.locksidian-background-media {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Prevent interaction */
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ============================================================================
+   OVERLAY (blur and darkening effect)
+   ============================================================================ */
+
+.locksidian-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px) saturate(120%);
+  -webkit-backdrop-filter: blur(5px) saturate(120%);
+  /* Prevent interaction */
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ============================================================================
+   CONTENT CONTAINER (username + password input)
+   ============================================================================ */
+
+.locksidian-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: slideUpIn 0.7s 0.2s cubic-bezier(0.25, 1, 0.5, 1) forwards,
+             fadeInContent 0.7s 0.2s ease-in-out forwards;
+  transform: translateY(20px) scale(var(--locksidian-ui-scale, 1));
+  transition: transform 0.3s ease;
+  opacity: 0;
+  /* Allow interaction with children */
+  pointer-events: auto;
+  /* Ensure content is above everything */
+  isolation: isolate;
+}
+
+@keyframes slideUpIn {
+  to {
+    transform: translateY(0) scale(var(--locksidian-ui-scale, 1));
+  }
+}
+
+/* ============================================================================
+   USERNAME DISPLAY
+   ============================================================================ */
+
+.locksidian-username {
+  font-size: 38px;
+  margin-bottom: 25px;
+  text-shadow: 0px 2px 12px rgba(0, 0, 0, 0.5);
+  font-family: var(--locksidian-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  font-weight: var(--locksidian-font-weight, 500);
+  font-style: var(--locksidian-font-style, normal);
+  /* Prevent selection */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Ensure it stays above overlay */
+  position: relative;
+  z-index: 10;
+}
+
+/* ============================================================================
+   PASSWORD INPUT WRAPPER & INPUT (CORRECTED FOR GLASSMORPHISM)
+   ============================================================================ */
+
+.locksidian-password-wrapper {
+  position: relative;
+  width: var(--locksidian-input-width, 340px);
+  max-width: 90vw;
+  transition: width 0.3s ease;
+  z-index: 10;
+}
+
+.locksidian-password-wrapper.is-error {
+  animation: shake 0.4s linear;
+}
+
+/* This is the corrected rule for the input bar */
+.locksidian-screen .locksidian-input {
+  width: 100%;
+  
+  /* [THE FIX] Dark, translucent background for the glass effect */
+  background: rgba(10, 10, 10, 0.25) !important; 
+  
+  /* [THE FIX] The essential blur effect */
+  backdrop-filter: blur(12px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+  
+  /* A subtle border to define the "edge" of the glass */
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  
+  border-radius: 100px;
+  color: white;
+  padding: 16px 30px;
+  font-size: 14px;
+  letter-spacing: 0.5em;
+  text-align: center;
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.3s ease;
+  user-select: text;
+  -webkit-user-select: text;
+
+  /* Adds a subtle shadow to the text for better readability */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.locksidian-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.1em;
+  text-shadow: none;
+}
+
+/* Ensure the focus state also maintains the glass effect */
+.locksidian-screen .locksidian-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2),
+              0 0 0 2px rgba(255, 255, 255, 0.1) inset;
+}
+
+.locksidian-input.is-error {
+  border-color: #e74c3c !important;
+}
+
+.locksidian-input.is-success {
+  border-color: #2ecc71 !important;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-6px); }
+  30%, 70% { transform: translateX(6px); }
+  50% { transform: translateX(-6px); }
+}
+
+/* ============================================================================
+   PROGRESS MODAL (for encryption/decryption)
+   ============================================================================ */
+
+.locksidian-progress-modal .modal-content {
+  padding: 20px 30px;
+}
+
+.locksidian-progress-modal h2 {
+  margin-bottom: 15px;
+}
+
+.locksidian-progress-modal .progress-status {
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+}
+
+.locksidian-progress-modal .progress-bar-wrapper {
+  width: 100%;
+  height: 10px;
+  background-color: var(--background-modifier-border);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.locksidian-progress-modal .progress-bar {
+  height: 100%;
+  background-color: var(--interactive-accent);
+  transition: width 0.3s ease;
+  border-radius: 5px;
+}
+
+.locksidian-progress-modal .progress-details {
+  font-size: 12px;
+  min-height: 1.5em;
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   SETTINGS PANEL - PASSWORD STRENGTH INDICATOR
+   ============================================================================ */
+
+.password-strength-container {
+  margin: 12px 0;
+  width: 100%;
+}
+
+.password-strength-bar-wrapper {
+  width: 100%;
+  height: 8px;
+  background-color: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.password-strength-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  transition: all 0.4s ease;
+}
+
+.password-strength-bar.strength-0,
+.password-strength-bar.strength-1 {
+  width: 25%;
+  background-color: #e74c3c;
+}
+
+.password-strength-bar.strength-2 {
+  width: 50%;
+  background-color: #f39c12;
+}
+
+.password-strength-bar.strength-3 {
+  width: 75%;
+  background-color: #27ae60;
+}
+
+.password-strength-bar.strength-4 {
+  width: 100%;
+  background-color: #2ecc71;
+}
+
+.password-strength-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  min-height: 1.5em;
+}
+
+/* ============================================================================
+   SETTINGS PANEL - BACKGROUND THUMBNAIL GRID
+   ============================================================================ */
+
+.locksidian-thumbnail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.locksidian-thumbnail-item {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease-in-out;
+  background-color: var(--background-secondary);
+}
+
+.locksidian-thumbnail-item:hover {
+  transform: scale(1.03);
+  box-shadow: 0 0 15px rgba(var(--accent-h), var(--accent-s), var(--accent-l), 0.3);
+}
+
+.locksidian-thumbnail-item.is-active {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 15px rgba(var(--accent-h), var(--accent-s), var(--accent-l), 0.5);
+  transform: scale(1.05);
+}
+
+.locksidian-thumbnail-item .thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background-color: var(--background-secondary);
+}
+
+.locksidian-thumbnail-item .thumbnail-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background-color: var(--background-secondary-alt);
+}
+
+.locksidian-thumbnail-item .thumbnail-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.locksidian-thumbnail-item.add-new-btn {
+  border-style: dashed;
+  border-color: var(--text-faint);
+  color: var(--text-muted);
+}
+
+.locksidian-thumbnail-item.add-new-btn:hover {
+  border-color: var(--interactive-accent-hover);
+  color: var(--interactive-accent-hover);
+}
+
+.locksidian-thumbnail-item .delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: 50%;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.locksidian-thumbnail-item:hover .delete-btn {
+  display: flex;
+  opacity: 1;
+}
+
+.locksidian-thumbnail-item .delete-btn:hover {
+  background-color: #e74c3c;
+  color: white;
+  transform: scale(1.1);
+}
+
+/* ============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .locksidian-username {
+    font-size: 32px;
+    margin-bottom: 20px;
+  }
+
+  .locksidian-input {
+    font-size: 16px;
+    padding: 14px 25px;
+  }
+
+  .locksidian-thumbnail-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+  }
+}
+
+/* ============================================================================
+   ACCESSIBILITY IMPROVEMENTS
+   ============================================================================ */
+
+.locksidian-input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .locksidian-overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+  }
+
+  .locksidian-input {
+    border-width: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .locksidian-screen,
+    .locksidian-main-content,
+    .locksidian-content,
+    .locksidian-input,
+    .locksidian-thumbnail-item {
+        animation: none !important;
+        transition: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    .locksidian-screen.is-leaving {
+        opacity: 0 !important;
+    }
+}
