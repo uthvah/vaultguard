@@ -1,5 +1,5 @@
 /*
- * Locksidian: Stylesheet
+ * vaultguard: Stylesheet
  * Refactored with bug fixes and improved layout
  */
 
@@ -7,7 +7,7 @@
    MAIN LOCKSCREEN & CORE STYLES
    ============================================================================ */
 
-.locksidian-screen {
+.vaultguard-screen {
   position: fixed;
   top: 0;
   left: 0;
@@ -22,17 +22,17 @@
   overflow: hidden;
 }
 
-.locksidian-screen-loading {
+.vaultguard-screen-loading {
   /* No animations while loading */
   animation: none !important;
 }
 
-.locksidian-screen-loading * {
+.vaultguard-screen-loading * {
   animation: none !important;
   opacity: 1 !important;
 }
 
-.locksidian-screen.is-leaving {
+.vaultguard-screen.is-leaving {
   animation: fadeOutScreen 0.4s ease-out forwards;
 }
 
@@ -45,7 +45,7 @@
    TITLEBAR (for window dragging)
    ============================================================================ */
 
-.locksidian-titlebar {
+.vaultguard-titlebar {
   flex-shrink: 0;
   height: 30px;
   width: 100%;
@@ -58,7 +58,7 @@
    MAIN CONTENT AREA
    ============================================================================ */
 
-.locksidian-main-content {
+.vaultguard-main-content {
   flex-grow: 1;
   position: relative;
   display: flex;
@@ -79,7 +79,7 @@
    BACKGROUND MEDIA (video, image, or color)
    ============================================================================ */
 
-.locksidian-background-media {
+.vaultguard-background-media {
   position: absolute;
   top: 0;
   left: 0;
@@ -95,7 +95,7 @@
    OVERLAY (blur and darkening effect)
    ============================================================================ */
 
-.locksidian-overlay {
+.vaultguard-overlay {
   position: absolute;
   top: 0;
   left: 0;
@@ -113,7 +113,7 @@
    CONTENT CONTAINER (username + password input)
    ============================================================================ */
 
-.locksidian-content {
+.vaultguard-content {
   position: relative;
   z-index: 10;
   display: flex;
@@ -121,7 +121,7 @@
   align-items: center;
   animation: slideUpIn 0.7s 0.2s cubic-bezier(0.25, 1, 0.5, 1) forwards,
              fadeInContent 0.7s 0.2s ease-in-out forwards;
-  transform: translateY(20px) scale(var(--locksidian-ui-scale, 1));
+  transform: translateY(20px) scale(var(--vaultguard-ui-scale, 1));
   transition: transform 0.3s ease;
   opacity: 0;
   /* Allow interaction with children */
@@ -132,7 +132,7 @@
 
 @keyframes slideUpIn {
   to {
-    transform: translateY(0) scale(var(--locksidian-ui-scale, 1));
+    transform: translateY(0) scale(var(--vaultguard-ui-scale, 1));
   }
 }
 
@@ -140,13 +140,13 @@
    USERNAME DISPLAY
    ============================================================================ */
 
-.locksidian-username {
+.vaultguard-username {
   font-size: 38px;
   margin-bottom: 25px;
   text-shadow: 0px 2px 12px rgba(0, 0, 0, 0.5);
-  font-family: var(--locksidian-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
-  font-weight: var(--locksidian-font-weight, 500);
-  font-style: var(--locksidian-font-style, normal);
+  font-family: var(--vaultguard-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  font-weight: var(--vaultguard-font-weight, 500);
+  font-style: var(--vaultguard-font-style, normal);
   /* Prevent selection */
   user-select: none;
   -webkit-user-select: none;
@@ -159,20 +159,20 @@
    PASSWORD INPUT WRAPPER & INPUT (CORRECTED FOR GLASSMORPHISM)
    ============================================================================ */
 
-.locksidian-password-wrapper {
+.vaultguard-password-wrapper {
   position: relative;
-  width: var(--locksidian-input-width, 340px);
+  width: var(--vaultguard-input-width, 340px);
   max-width: 90vw;
   transition: width 0.3s ease;
   z-index: 10;
 }
 
-.locksidian-password-wrapper.is-error {
+.vaultguard-password-wrapper.is-error {
   animation: shake 0.4s linear;
 }
 
 /* This is the corrected rule for the input bar */
-.locksidian-screen .locksidian-input {
+.vaultguard-screen .vaultguard-input {
   width: 100%;
   
   /* [THE FIX] Dark, translucent background for the glass effect */
@@ -202,24 +202,24 @@
   text-shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
 
-.locksidian-input::placeholder {
+.vaultguard-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
   letter-spacing: 0.1em;
   text-shadow: none;
 }
 
 /* Ensure the focus state also maintains the glass effect */
-.locksidian-screen .locksidian-input:focus {
+.vaultguard-screen .vaultguard-input:focus {
   border-color: rgba(255, 255, 255, 0.4);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2),
               0 0 0 2px rgba(255, 255, 255, 0.1) inset;
 }
 
-.locksidian-input.is-error {
+.vaultguard-input.is-error {
   border-color: #e74c3c !important;
 }
 
-.locksidian-input.is-success {
+.vaultguard-input.is-success {
   border-color: #2ecc71 !important;
 }
 
@@ -233,21 +233,21 @@
    PROGRESS MODAL (for encryption/decryption)
    ============================================================================ */
 
-.locksidian-progress-modal .modal-content {
+.vaultguard-progress-modal .modal-content {
   padding: 20px 30px;
 }
 
-.locksidian-progress-modal h2 {
+.vaultguard-progress-modal h2 {
   margin-bottom: 15px;
 }
 
-.locksidian-progress-modal .progress-status {
+.vaultguard-progress-modal .progress-status {
   font-size: 14px;
   margin-bottom: 10px;
   color: var(--text-muted);
 }
 
-.locksidian-progress-modal .progress-bar-wrapper {
+.vaultguard-progress-modal .progress-bar-wrapper {
   width: 100%;
   height: 10px;
   background-color: var(--background-modifier-border);
@@ -256,14 +256,14 @@
   margin-bottom: 10px;
 }
 
-.locksidian-progress-modal .progress-bar {
+.vaultguard-progress-modal .progress-bar {
   height: 100%;
   background-color: var(--interactive-accent);
   transition: width 0.3s ease;
   border-radius: 5px;
 }
 
-.locksidian-progress-modal .progress-details {
+.vaultguard-progress-modal .progress-details {
   font-size: 12px;
   min-height: 1.5em;
   color: var(--text-muted);
@@ -326,14 +326,14 @@
    SETTINGS PANEL - BACKGROUND THUMBNAIL GRID
    ============================================================================ */
 
-.locksidian-thumbnail-grid {
+.vaultguard-thumbnail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 15px;
   margin-top: 10px;
 }
 
-.locksidian-thumbnail-item {
+.vaultguard-thumbnail-item {
   position: relative;
   aspect-ratio: 16 / 9;
   border-radius: 8px;
@@ -344,25 +344,25 @@
   background-color: var(--background-secondary);
 }
 
-.locksidian-thumbnail-item:hover {
+.vaultguard-thumbnail-item:hover {
   transform: scale(1.03);
   box-shadow: 0 0 15px rgba(var(--accent-h), var(--accent-s), var(--accent-l), 0.3);
 }
 
-.locksidian-thumbnail-item.is-active {
+.vaultguard-thumbnail-item.is-active {
   border-color: var(--interactive-accent);
   box-shadow: 0 0 15px rgba(var(--accent-h), var(--accent-s), var(--accent-l), 0.5);
   transform: scale(1.05);
 }
 
-.locksidian-thumbnail-item .thumbnail-image {
+.vaultguard-thumbnail-item .thumbnail-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
   background-color: var(--background-secondary);
 }
 
-.locksidian-thumbnail-item .thumbnail-icon {
+.vaultguard-thumbnail-item .thumbnail-icon {
   width: 100%;
   height: 100%;
   display: flex;
@@ -372,23 +372,23 @@
   background-color: var(--background-secondary-alt);
 }
 
-.locksidian-thumbnail-item .thumbnail-icon svg {
+.vaultguard-thumbnail-item .thumbnail-icon svg {
   width: 40px;
   height: 40px;
 }
 
-.locksidian-thumbnail-item.add-new-btn {
+.vaultguard-thumbnail-item.add-new-btn {
   border-style: dashed;
   border-color: var(--text-faint);
   color: var(--text-muted);
 }
 
-.locksidian-thumbnail-item.add-new-btn:hover {
+.vaultguard-thumbnail-item.add-new-btn:hover {
   border-color: var(--interactive-accent-hover);
   color: var(--interactive-accent-hover);
 }
 
-.locksidian-thumbnail-item .delete-btn {
+.vaultguard-thumbnail-item .delete-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -408,12 +408,12 @@
   transition: all 0.2s ease;
 }
 
-.locksidian-thumbnail-item:hover .delete-btn {
+.vaultguard-thumbnail-item:hover .delete-btn {
   display: flex;
   opacity: 1;
 }
 
-.locksidian-thumbnail-item .delete-btn:hover {
+.vaultguard-thumbnail-item .delete-btn:hover {
   background-color: #e74c3c;
   color: white;
   transform: scale(1.1);
@@ -424,17 +424,17 @@
    ============================================================================ */
 
 @media (max-width: 768px) {
-  .locksidian-username {
+  .vaultguard-username {
     font-size: 32px;
     margin-bottom: 20px;
   }
 
-  .locksidian-input {
+  .vaultguard-input {
     font-size: 16px;
     padding: 14px 25px;
   }
 
-  .locksidian-thumbnail-grid {
+  .vaultguard-thumbnail-grid {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 10px;
   }
@@ -444,36 +444,36 @@
    ACCESSIBILITY IMPROVEMENTS
    ============================================================================ */
 
-.locksidian-input:focus-visible {
+.vaultguard-input:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
-  .locksidian-overlay {
+  .vaultguard-overlay {
     background-color: rgba(0, 0, 0, 0.7);
   }
 
-  .locksidian-input {
+  .vaultguard-input {
     border-width: 3px;
   }
 }
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
-    .locksidian-screen,
-    .locksidian-main-content,
-    .locksidian-content,
-    .locksidian-input,
-    .locksidian-thumbnail-item {
+    .vaultguard-screen,
+    .vaultguard-main-content,
+    .vaultguard-content,
+    .vaultguard-input,
+    .vaultguard-thumbnail-item {
         animation: none !important;
         transition: none !important;
         opacity: 1 !important;
         transform: none !important;
     }
 
-    .locksidian-screen.is-leaving {
+    .vaultguard-screen.is-leaving {
         opacity: 0 !important;
     }
 }
