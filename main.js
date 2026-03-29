@@ -1,5 +1,5 @@
 /*
- * Locksidian: The Lockscreen for Obsidian
+ * VaultGuard: The Lockscreen for Obsidian
  * Refactored with best practices and bug fixes
  */
 
@@ -11,7 +11,7 @@ const obsidian = require('obsidian');
 
 const IV_LENGTH = 12;
 const SALT_LENGTH = 16;
-const MAGIC_HEADER = "LOCKSIDIAN_ENCRYPTED_V1::";
+const MAGIC_HEADER = "VAULTGUARD_ENCRYPTED_V1::";
 const NOTE_PROCESSING_BATCH_SIZE = 20;
 const PBKDF2_ITERATIONS = 250000;
 
@@ -132,7 +132,7 @@ class ProgressModal extends obsidian.Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.addClass('locksidian-progress-modal');
+        contentEl.addClass('vaultguard-progress-modal');
         
         contentEl.createEl('h2', { text: this.title });
         
@@ -182,7 +182,7 @@ class ProgressModal extends obsidian.Modal {
 // MAIN PLUGIN CLASS
 // ============================================================================
 
-class LocksidianPlugin extends obsidian.Plugin {
+class VaultGuardPlugin extends obsidian.Plugin {
     constructor(app, manifest) {
         super(app, manifest);
         
@@ -203,7 +203,7 @@ class LocksidianPlugin extends obsidian.Plugin {
     }
 
     async onload() {
-        console.log('Locksidian: Loading plugin...');
+        console.log('VaultGuard: Loading plugin...');
         
         // Load settings and data
         await this.loadPluginData();
@@ -220,7 +220,7 @@ class LocksidianPlugin extends obsidian.Plugin {
         }
         
         // Add settings tab
-        this.addSettingTab(new LocksidianSettingsTab(this.app, this));
+        this.addSettingTab(new VaultGuardSettingsTab(this.app, this));
         
         // Add commands
         this.addCommand({
@@ -242,11 +242,11 @@ class LocksidianPlugin extends obsidian.Plugin {
             this.resetIdleTimer();
         }
         
-        console.log('Locksidian: Plugin loaded successfully');
+        console.log('VaultGuard: Plugin loaded successfully');
     }
 
     onunload() {
-        console.log('Locksidian: Unloading plugin...');
+        console.log('VaultGuard: Unloading plugin...');
         this.removeLockScreen();
         clearTimeout(this.idleTimer);
     }
@@ -273,10 +273,10 @@ class LocksidianPlugin extends obsidian.Plugin {
                     setTimeout(() => reject(new Error('timeout')), 5000)
                 )
             ]);
-                console.log("Locksidian: zxcvbn.js loaded successfully from CDN.");
+                console.log("VaultGuard: zxcvbn.js loaded successfully from CDN.");
             }
         } catch (e) {
-            console.warn("Locksidian: Failed to load zxcvbn.js from CDN. Password strength checking disabled.");
+            console.warn("VaultGuard: Failed to load zxcvbn.js from CDN. Password strength checking disabled.");
         }
 
         const storedData = await this.loadData() || {};
@@ -292,19 +292,19 @@ class LocksidianPlugin extends obsidian.Plugin {
         // Determine if vault is locked
         this.state.isLocked = !!(storedData?.salt && storedData?.encryptedSettings);
         
-        console.log('Locksidian: Data loaded. Vault locked:', this.state.isLocked);
+        console.log('VaultGuard: Data loaded. Vault locked:', this.state.isLocked);
     }
 
     async saveSettings() {
         if (this.state.isLocked) {
-            console.warn('Locksidian: Cannot save settings while locked');
+            console.warn('VaultGuard: Cannot save settings while locked');
             return;
         }
 
         const storedData = await this.loadData() || {};
 
         if (!storedData.salt || !this.state.encryptionKey) {
-            console.error('Locksidian: Encryption key not available. Saving visual settings only.');
+            console.error('VaultGuard: Encryption key not available. Saving visual settings only.');
             await this.saveData({
                 ...storedData,
                 visualPrefs: this.state.settings.visual
@@ -340,7 +340,7 @@ class LocksidianPlugin extends obsidian.Plugin {
             return;
         }
 
-        console.log('Locksidian: Locking vault...');
+        console.log('VaultGuard: Locking vault...');
 
         // Encrypt notes if enabled
         if (this.state.settings.encryptNotes && this.state.encryptionKey) {
@@ -372,7 +372,7 @@ class LocksidianPlugin extends obsidian.Plugin {
         const stored = await this.loadData();
         
         if (!stored?.salt) {
-            console.error('Locksidian: No salt found in stored data');
+            console.error('VaultGuard: No salt found in stored data');
             return false;
         }
 
@@ -390,7 +390,7 @@ class LocksidianPlugin extends obsidian.Plugin {
             this.state.settings.autoLockTime = decryptedSettings.autoLockTime ?? DEFAULT_SETTINGS.autoLockTime;
             this.state.isLocked = false;
 
-            console.log('Locksidian: Vault unlocked successfully');
+            console.log('VaultGuard: Vault unlocked successfully');
             new obsidian.Notice('Vault unlocked!');
 
             // Decrypt notes if enabled
@@ -418,7 +418,7 @@ class LocksidianPlugin extends obsidian.Plugin {
 
             return true;
         } catch (err) {
-            console.error('Locksidian Unlock Error:', err.message);
+            console.error('VaultGuard Unlock Error:', err.message);
             return false;
         }
     }
@@ -447,7 +447,7 @@ class LocksidianPlugin extends obsidian.Plugin {
         this.state.isLocked = false;
         this.resetIdleTimer();
 
-        console.log('Locksidian: Password set successfully');
+        console.log('VaultGuard: Password set successfully');
     }
 
     async changePassword(currentPassword, newPassword) {
@@ -491,7 +491,7 @@ class LocksidianPlugin extends obsidian.Plugin {
                 if (result.status === 'rejected') {
                     failedCount++;
                     console.error(
-                        `Locksidian: Note "${batch[index].path}" failed to ${mode}:`,
+                        `VaultGuard: Note "${batch[index].path}" failed to ${mode}:`,
                         result.reason
                     );
                 }
@@ -506,11 +506,11 @@ class LocksidianPlugin extends obsidian.Plugin {
 
         if (failedCount > 0) {
             new obsidian.Notice(
-                `Locksidian: ${failedCount} file(s) failed to ${mode}. Check console for details.`
+                `VaultGuard: ${failedCount} file(s) failed to ${mode}. Check console for details.`
             );
         }
 
-        console.log(`Locksidian: ${mode} completed. Processed: ${processedCount}, Failed: ${failedCount}`);
+        console.log(`VaultGuard: ${mode} completed. Processed: ${processedCount}, Failed: ${failedCount}`);
     }
 
     async encryptNote(file) {
@@ -573,15 +573,15 @@ class LocksidianPlugin extends obsidian.Plugin {
 
     showLockScreenImmediately() {
         if (this.lockScreenEl) {
-            console.warn('Locksidian: Lock screen already showing');
+            console.warn('VaultGuard: Lock screen already showing');
             return;
         }
 
-        console.log('Locksidian: Showing lock screen immediately');
+        console.log('VaultGuard: Showing lock screen immediately');
 
         // Create a minimal lock screen ASAP to hide vault content
         this.lockScreenEl = document.createElement('div');
-        this.lockScreenEl.className = 'locksidian-screen locksidian-screen-loading';
+        this.lockScreenEl.className = 'vaultguard-screen vaultguard-screen-loading';
         this.lockScreenEl.style.opacity = '1';
         
         // Simple background while loading
@@ -595,19 +595,19 @@ class LocksidianPlugin extends obsidian.Plugin {
             return;
         }
 
-        console.log('Locksidian: Enhancing lock screen');
+        console.log('VaultGuard: Enhancing lock screen');
 
         // Remove loading class and rebuild with full UI
-        this.lockScreenEl.classList.remove('locksidian-screen-loading');
+        this.lockScreenEl.classList.remove('vaultguard-screen-loading');
         this.lockScreenEl.style.backgroundColor = '';
         this.lockScreenEl.innerHTML = '';
 
         // Create titlebar for dragging
-        this.lockScreenEl.createDiv({ cls: 'locksidian-titlebar' });
+        this.lockScreenEl.createDiv({ cls: 'vaultguard-titlebar' });
 
         // Create main content area
         const mainContentEl = this.lockScreenEl.createDiv({ 
-            cls: 'locksidian-main-content' 
+            cls: 'vaultguard-main-content' 
         });
 
         // Add background
@@ -621,7 +621,7 @@ class LocksidianPlugin extends obsidian.Plugin {
 
         // Focus input after a short delay to ensure rendering is complete
         setTimeout(() => {
-            const input = this.lockScreenEl?.querySelector('.locksidian-input');
+            const input = this.lockScreenEl?.querySelector('.vaultguard-input');
             if (input) {
                 input.focus();
             }
@@ -630,22 +630,22 @@ class LocksidianPlugin extends obsidian.Plugin {
 
     showLockScreen() {
         if (this.lockScreenEl) {
-            console.warn('Locksidian: Lock screen already showing');
+            console.warn('VaultGuard: Lock screen already showing');
             return;
         }
 
-        console.log('Locksidian: Showing lock screen');
+        console.log('VaultGuard: Showing lock screen');
 
         // Create lock screen container
         this.lockScreenEl = document.createElement('div');
-        this.lockScreenEl.className = 'locksidian-screen';
+        this.lockScreenEl.className = 'vaultguard-screen';
 
         // Create titlebar for dragging
-        this.lockScreenEl.createDiv({ cls: 'locksidian-titlebar' });
+        this.lockScreenEl.createDiv({ cls: 'vaultguard-titlebar' });
 
         // Create main content area
         const mainContentEl = this.lockScreenEl.createDiv({ 
-            cls: 'locksidian-main-content' 
+            cls: 'vaultguard-main-content' 
         });
 
         // Add background
@@ -662,7 +662,7 @@ class LocksidianPlugin extends obsidian.Plugin {
 
         // Focus input after a short delay to ensure rendering is complete
         setTimeout(() => {
-            const input = this.lockScreenEl?.querySelector('.locksidian-input');
+            const input = this.lockScreenEl?.querySelector('.vaultguard-input');
             if (input) {
                 input.focus();
             }
@@ -671,11 +671,11 @@ class LocksidianPlugin extends obsidian.Plugin {
 
    removeLockScreen() {
     if (!this.lockScreenEl) {
-         console.log('Locksidian: lockScreenEl is null, returning early');
+         console.log('VaultGuard: lockScreenEl is null, returning early');
         return;
     }
-    console.log('Locksidian: lockScreenEl at remove time:', this.lockScreenEl === document.querySelector('.locksidian-screen'));
-    console.log('Locksidian: Removing lock screen');
+    console.log('VaultGuard: lockScreenEl at remove time:', this.lockScreenEl === document.querySelector('.vaultguard-screen'));
+    console.log('VaultGuard: Removing lock screen');
     this.lockScreenEl.classList.add('is-leaving');
 
     const el = this.lockScreenEl;
@@ -693,22 +693,22 @@ class LocksidianPlugin extends obsidian.Plugin {
 
     createContentElement() {
         const content = document.createElement('div');
-        content.className = 'locksidian-content';
+        content.className = 'vaultguard-content';
 
         const visual = this.state.settings.visual;
 
         // Apply CSS custom properties
-        content.style.setProperty('--locksidian-ui-scale', (visual.uiScale / 100).toString());
-        content.style.setProperty('--locksidian-input-width', `${visual.inputWidth}px`);
+        content.style.setProperty('--vaultguard-ui-scale', (visual.uiScale / 100).toString());
+        content.style.setProperty('--vaultguard-input-width', `${visual.inputWidth}px`);
 
         // Username display
-        const username = content.createEl('div', { cls: 'locksidian-username' });
+        const username = content.createEl('div', { cls: 'vaultguard-username' });
         username.textContent = visual.username;
-        username.style.setProperty('--locksidian-font-family', 
+        username.style.setProperty('--vaultguard-font-family', 
             visual.fontFamily === 'System Default' ? 'inherit' : visual.fontFamily
         );
-        username.style.setProperty('--locksidian-font-weight', visual.fontWeight);
-        username.style.setProperty('--locksidian-font-style', visual.fontStyle);
+        username.style.setProperty('--vaultguard-font-weight', visual.fontWeight);
+        username.style.setProperty('--vaultguard-font-style', visual.fontStyle);
 
         // Password input
         content.appendChild(this.createPasswordInputElement());
@@ -718,10 +718,10 @@ class LocksidianPlugin extends obsidian.Plugin {
 
     createPasswordInputElement() {
         const wrapper = document.createElement('div');
-        wrapper.className = 'locksidian-password-wrapper';
+        wrapper.className = 'vaultguard-password-wrapper';
 
         const input = document.createElement('input');
-        input.className = 'locksidian-input';
+        input.className = 'vaultguard-input';
         input.type = 'password';
         input.placeholder = 'Password';
 
@@ -760,14 +760,14 @@ class LocksidianPlugin extends obsidian.Plugin {
         // Solid color background
         if (type === 'color') {
             const el = document.createElement('div');
-            el.className = 'locksidian-background-media';
+            el.className = 'vaultguard-background-media';
             el.style.backgroundColor = value;
             return el;
         }
 
         // Image or video background
         const media = document.createElement(type === 'video' ? 'video' : 'img');
-        media.className = 'locksidian-background-media';
+        media.className = 'vaultguard-background-media';
 
         if (type === 'video') {
             Object.assign(media, {
@@ -795,7 +795,7 @@ class LocksidianPlugin extends obsidian.Plugin {
 
     createOverlayElement() {
         const overlay = document.createElement('div');
-        overlay.className = 'locksidian-overlay';
+        overlay.className = 'vaultguard-overlay';
         return overlay;
     }
 
@@ -985,11 +985,11 @@ class AddBackgroundModal extends obsidian.Modal {
 // SETTINGS TAB
 // ============================================================================
 
-class LocksidianSettingsTab extends obsidian.PluginSettingTab {
+class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
     async display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Locksidian Settings' });
+        containerEl.createEl('h2', { text: 'VaultGuard Settings' });
 
         const storedData = await this.plugin.loadData();
 
@@ -1006,7 +1006,7 @@ class LocksidianSettingsTab extends obsidian.PluginSettingTab {
 
     renderSetInitialPassword(containerEl) {
         containerEl.createEl('p', { 
-            text: 'Welcome to Locksidian! Please set a master password to secure your vault.' 
+            text: 'Welcome to VaultGuard! Please set a master password to secure your vault.' 
         });
 
         const setting = new obsidian.Setting(containerEl)
@@ -1213,10 +1213,10 @@ class LocksidianSettingsTab extends obsidian.PluginSettingTab {
     }
 
     renderThumbnailGrid(containerEl) {
-        const grid = containerEl.createDiv({ cls: 'locksidian-thumbnail-grid' });
+        const grid = containerEl.createDiv({ cls: 'vaultguard-thumbnail-grid' });
 
         this.plugin.state.settings.visual.backgrounds.forEach(bg => {
-            const item = grid.createDiv({ cls: 'locksidian-thumbnail-item' });
+            const item = grid.createDiv({ cls: 'vaultguard-thumbnail-item' });
 
             if (bg.id === this.plugin.state.settings.visual.activeBackgroundId) {
                 item.addClass('is-active');
@@ -1258,7 +1258,7 @@ class LocksidianSettingsTab extends obsidian.PluginSettingTab {
                     if (confirm('Are you sure you want to delete this background?')) {
                         if (bg.value && !bg.value.startsWith('http') && bg.type !== 'color') {
                             await this.app.vault.adapter.remove(bg.value)
-                                .catch(e => console.error('Locksidian: Failed to delete background file', e));
+                                .catch(e => console.error('VaultGuard: Failed to delete background file', e));
                         }
 
                         this.plugin.state.settings.visual.backgrounds = 
@@ -1275,7 +1275,7 @@ class LocksidianSettingsTab extends obsidian.PluginSettingTab {
             }
         });
 
-        const addBtn = grid.createDiv({ cls: 'locksidian-thumbnail-item add-new-btn' });
+        const addBtn = grid.createDiv({ cls: 'vaultguard-thumbnail-item add-new-btn' });
         addBtn.createDiv({ cls: 'thumbnail-icon' }).innerHTML = 
             `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
 
@@ -1356,4 +1356,4 @@ class LocksidianSettingsTab extends obsidian.PluginSettingTab {
     }
 }
 
-module.exports = LocksidianPlugin;
+module.exports = VaultGuardPlugin;
