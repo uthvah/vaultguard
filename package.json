@@ -1,0 +1,15 @@
+{
+  "name": "vaultguard",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">\r <img alt=\"VaultGuard lockscreen\" src=\"https://github.com/user-attachments/assets/24ad6462-21e5-4b94-b4b5-2c3e9be2df16\" />\r </p>",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "dependencies": {
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-en": "^3.0.2",
+    "esbuild": "^0.27.4"
+  }
+}

@@ -1,6 +1,6 @@
-# Locksidian
+# VaultGuard
 <p align="center">
-<img alt="Locksidian lockscreen" src="https://github.com/user-attachments/assets/24ad6462-21e5-4b94-b4b5-2c3e9be2df16" />
+<img alt="VaultGuard lockscreen" src="https://github.com/user-attachments/assets/24ad6462-21e5-4b94-b4b5-2c3e9be2df16" />
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 
-Locksidian is a secure, beautiful, and highly customizable lockscreen plugin for Obsidian. It protects your vault from unauthorized access with industry-standard encryption, while offering personalization features to match your unique workflow and style.
+VaultGuard is a secure, beautiful, and highly customizable lockscreen plugin for Obsidian. It protects your vault from unauthorized access with industry-standard encryption, while offering personalization features to match your unique workflow and style.
 
 This plugin is built with a security-first mindset, ensuring your sensitive notes remain private. It has been hardened for stability and performance, providing a seamless and reliable user experience.
 
@@ -35,25 +35,25 @@ This plugin is built with a security-first mindset, ensuring your sensitive note
 ## From the Community Plugins Store (Not approved yet)
 1. Open Settings in Obsidian.
 2. Go to Community Plugins and make sure "Restricted mode" is off.
-3. Click Browse and search for "Locksidian".
+3. Click Browse and search for "VaultGuard".
 4. Click Install, and then click Enable.
-5. Open the Locksidian settings to set your master password!
+5. Open the VaultGuard settings to set your master password!
 
 ## Manual Installation
 1. Download the latest main.js, manifest.json, and styles.css from the releases page.
 2. Download the latest zxcvbn.js and bg.mp4 from the main page.
 3. Navigate to your Obsidian vault's plugin folder: <YourVault>/.obsidian/plugins/.
-4. Create a new folder named locksidian.
+4. Create a new folder named VaultGuard.
 5. Place the five downloaded files inside this new folder.
-6. In Obsidian, go to Settings -> Community Plugins and enable "Locksidian".
+6. In Obsidian, go to Settings -> Community Plugins and enable "VaultGuard".
 
 ## Getting Started
-- Set Your Password: After installing, go to the Locksidian settings tab. You will be prompted to create your master password.
+- Set Your Password: After installing, go to the VaultGuard settings tab. You will be prompted to create your master password.
 - Lock Your Vault:
 	- Click the Lock icon in the left ribbon.
-	- Use the command palette (Ctrl/Cmd + P) and run "Locksidian: Lock Vault".
+	- Use the command palette (Ctrl/Cmd + P) and run "VaultGuard: Lock Vault".
 	- Wait for the auto-lock timer to expire (if enabled).
-- Customize: Head back to the Locksidian settings at any time (while unlocked) to change your password, configure the auto-lock timer, and customize your lockscreen.
+- Customize: Head back to the VaultGuard settings at any time (while unlocked) to change your password, configure the auto-lock timer, and customize your lockscreen.
 
 
 ## ⚠️ CRITICAL: Read Before Enabling Note Encryption
