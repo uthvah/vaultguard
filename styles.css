@@ -33,12 +33,12 @@
 }
 
 .vaultguard-screen.is-leaving {
-  animation: fadeOutScreen 0.4s ease-out forwards;
+  animation: unlockOut 0.45s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-@keyframes fadeOutScreen {
-  from { opacity: 1; }
-  to { opacity: 0; }
+@keyframes unlockOut {
+  0%   { opacity: 1; transform: scale(1); filter: blur(0px); }
+  100% { opacity: 0; transform: scale(1.04); filter: blur(2px); }
 }
 
 /* ============================================================================
@@ -70,6 +70,7 @@
   user-select: none;
   -webkit-user-select: none;
 }
+
 
 @keyframes fadeInContent {
   to { opacity: 1; }
@@ -121,18 +122,20 @@
   align-items: center;
   animation: slideUpIn 0.7s 0.2s cubic-bezier(0.25, 1, 0.5, 1) forwards,
              fadeInContent 0.7s 0.2s ease-in-out forwards;
-  transform: translateY(20px) scale(var(--vaultguard-ui-scale, 1));
+  transform: translateY(20px);
   transition: transform 0.3s ease;
   opacity: 0;
   /* Allow interaction with children */
   pointer-events: auto;
   /* Ensure content is above everything */
   isolation: isolate;
+  --vaultguard-base-font: 1rem;
+  font-family: var(--vaultguard-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 }
 
 @keyframes slideUpIn {
   to {
-    transform: translateY(0) scale(var(--vaultguard-ui-scale, 1));
+    transform: translateY(0);
   }
 }
 
@@ -141,10 +144,10 @@
    ============================================================================ */
 
 .vaultguard-username {
-  font-size: 38px;
-  margin-bottom: 25px;
+  font-size: calc(38px * var(--vaultguard-ui-scale, 1));
+  margin-bottom: calc(25px * var(--vaultguard-ui-scale, 1));
   text-shadow: 0px 2px 12px rgba(0, 0, 0, 0.5);
-  font-family: var(--vaultguard-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  font-family: var(--vaultguard-font-family, inherit);
   font-weight: var(--vaultguard-font-weight, 500);
   font-style: var(--vaultguard-font-style, normal);
   /* Prevent selection */
@@ -153,6 +156,28 @@
   /* Ensure it stays above overlay */
   position: relative;
   z-index: 10;
+}
+
+.vaultguard-clock {
+  font-size: calc(72px * var(--vaultguard-ui-scale, 1));
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 2px 20px rgba(0,0,0,0.3);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  margin-bottom: 6px;
+  font-family: var(--vaultguard-font-family, inherit);
+}
+
+.vaultguard-date {
+  font-size: calc(13px * var(--vaultguard-ui-scale, 1));
+  font-weight: 400;
+  color: rgba(255,255,255,0.50);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: calc(40px * var(--vaultguard-ui-scale, 1));
+  font-family: var(--vaultguard-font-family, inherit);
 }
 
 /* ============================================================================
@@ -186,10 +211,10 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   
-  border-radius: 100px;
+  border-radius: calc(var(--vaultguard-input-radius, 100) * 1px);
   color: white;
-  padding: 16px 30px;
-  font-size: 14px;
+  padding: calc(16px * var(--vaultguard-ui-scale, 1)) calc(30px * var(--vaultguard-ui-scale, 1));
+  font-size: calc(14px * var(--vaultguard-ui-scale, 1));
   letter-spacing: 0.5em;
   text-align: center;
   box-sizing: border-box;
@@ -224,49 +249,153 @@
 }
 
 @keyframes shake {
-  10%, 90% { transform: translateX(-6px); }
-  30%, 70% { transform: translateX(6px); }
-  50% { transform: translateX(-6px); }
+  10%, 90% { transform: translateX(calc(var(--vaultguard-shake-intensity, 6px) * -1)); }
+  30%, 70% { transform: translateX(var(--vaultguard-shake-intensity, 6px)); }
+  50% { transform: translateX(calc(var(--vaultguard-shake-intensity, 6px) * -1)); }
 }
 
 /* ============================================================================
    PROGRESS MODAL (for encryption/decryption)
    ============================================================================ */
 
+/* Progress modal */
 .vaultguard-progress-modal .modal-content {
-  padding: 20px 30px;
+  padding: 32px 36px 28px;
+  text-align: center;
 }
 
 .vaultguard-progress-modal h2 {
-  margin-bottom: 15px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
 }
 
 .vaultguard-progress-modal .progress-status {
-  font-size: 14px;
-  margin-bottom: 10px;
-  color: var(--text-muted);
-}
-
-.vaultguard-progress-modal .progress-bar-wrapper {
-  width: 100%;
-  height: 10px;
-  background-color: var(--background-modifier-border);
-  border-radius: 5px;
-  overflow: hidden;
-  margin-bottom: 10px;
-}
-
-.vaultguard-progress-modal .progress-bar {
-  height: 100%;
-  background-color: var(--interactive-accent);
-  transition: width 0.3s ease;
-  border-radius: 5px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin: 0 0 6px;
 }
 
 .vaultguard-progress-modal .progress-details {
   font-size: 12px;
-  min-height: 1.5em;
+  min-height: 1.4em;
+  color: var(--text-faint);
+  letter-spacing: 0.01em;
+}
+
+/* Add background modal */
+.vaultguard-add-bg-modal .modal-content {
+  padding: 28px 32px 24px;
+}
+
+.vaultguard-add-bg-modal h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.vaultguard-add-bg-modal .vaultguard-modal-desc {
+  font-size: 13px;
   color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.vaultguard-modal-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vaultguard-modal-divider::before,
+.vaultguard-modal-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--background-modifier-border);
+}
+
+/* ============================================================================
+   SETTINGS PANEL - SECTION HEADINGS
+   ============================================================================ */
+
+.vaultguard-settings h3 {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 28px 0 10px;
+}
+
+.vaultguard-settings h2 + h3 {
+  margin-top: 16px;
+}
+
+/* ============================================================================
+   SETTINGS PANEL - TOGGLE LABELS (Bold / Italic)
+   ============================================================================ */
+
+.vaultguard-toggle-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  margin-right: 6px;
+}
+
+.vaultguard-toggle-label--gap {
+  margin-left: 16px;
+}
+
+/* ============================================================================
+   SETTINGS PANEL - CHANGE PASSWORD CARD
+   ============================================================================ */
+
+.vaultguard-cp-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 4px;
+}
+
+.vaultguard-cp-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.vaultguard-cp-desc {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.vaultguard-cp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vaultguard-cp-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.vaultguard-cp-btn {
+  align-self: flex-end;
+}
+
+.vaultguard-cp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ============================================================================
@@ -274,52 +403,85 @@
    ============================================================================ */
 
 .password-strength-container {
-  margin: 12px 0;
+  margin: 4px 0;
   width: 100%;
 }
 
 .password-strength-bar-wrapper {
   width: 100%;
-  height: 8px;
+  height: 6px;
   background-color: var(--background-modifier-border);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .password-strength-bar {
   height: 100%;
   width: 0%;
-  border-radius: 4px;
-  transition: all 0.4s ease;
+  border-radius: 3px;
+  transition: width 0.35s ease, background-color 0.35s ease;
 }
 
 .password-strength-bar.strength-0,
 .password-strength-bar.strength-1 {
   width: 25%;
-  background-color: #e74c3c;
+  background-color: var(--color-red, #e74c3c);
 }
 
 .password-strength-bar.strength-2 {
   width: 50%;
-  background-color: #f39c12;
+  background-color: var(--color-orange, #f39c12);
 }
 
 .password-strength-bar.strength-3 {
   width: 75%;
-  background-color: #27ae60;
+  background-color: var(--color-green, #27ae60);
 }
 
 .password-strength-bar.strength-4 {
   width: 100%;
-  background-color: #2ecc71;
+  background-color: var(--color-green, #2ecc71);
 }
 
 .password-strength-text {
-  font-size: 11px;
+  font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   text-align: right;
-  min-height: 1.5em;
+  min-height: 1.4em;
+}
+
+/* ============================================================================
+   SETTINGS PANEL - DANGER ZONE (Note Encryption)
+   ============================================================================ */
+
+.vaultguard-danger-zone {
+  border: 1px solid color-mix(in srgb, var(--color-red, #e03131) 40%, transparent);
+  border-radius: 8px;
+  padding: 16px;
+  background-color: color-mix(in srgb, var(--color-red, #e03131) 6%, transparent);
+}
+
+.vaultguard-danger-zone p {
+  margin: 0 0 14px;
+  font-size: var(--font-ui-small);
+  line-height: 1.55;
+  color: var(--text-normal);
+}
+
+.vaultguard-danger-zone button {
+  background-color: var(--color-red, #e03131);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 14px;
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.vaultguard-danger-zone button:hover {
+  opacity: 0.82;
 }
 
 /* ============================================================================
@@ -331,6 +493,8 @@
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 15px;
   margin-top: 10px;
+  overflow: visible;
+  padding: 4px;
 }
 
 .vaultguard-thumbnail-item {
@@ -339,9 +503,16 @@
   border-radius: 8px;
   border: 3px solid transparent;
   cursor: pointer;
-  overflow: hidden;
   transition: all 0.2s ease-in-out;
   background-color: var(--background-secondary);
+}
+
+.vaultguard-thumbnail-item-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
 }
 
 .vaultguard-thumbnail-item:hover {
@@ -362,6 +533,7 @@
   background-color: var(--background-secondary);
 }
 
+
 .vaultguard-thumbnail-item .thumbnail-icon {
   width: 100%;
   height: 100%;
@@ -370,6 +542,14 @@
   justify-content: center;
   color: var(--text-muted);
   background-color: var(--background-secondary-alt);
+}
+
+.vaultguard-thumbnail-item .thumbnail-video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background-color: rgba(0, 0, 0, 0.38);
+  pointer-events: none;
 }
 
 .vaultguard-thumbnail-item .thumbnail-icon svg {
@@ -425,13 +605,13 @@
 
 @media (max-width: 768px) {
   .vaultguard-username {
-    font-size: 32px;
-    margin-bottom: 20px;
+    font-size: calc(32px * var(--vaultguard-ui-scale, 1));
+    margin-bottom: calc(20px * var(--vaultguard-ui-scale, 1));
   }
 
   .vaultguard-input {
-    font-size: 16px;
-    padding: 14px 25px;
+    font-size: calc(16px * var(--vaultguard-ui-scale, 1));
+    padding: calc(14px * var(--vaultguard-ui-scale, 1)) calc(25px * var(--vaultguard-ui-scale, 1));
   }
 
   .vaultguard-thumbnail-grid {
@@ -476,4 +656,73 @@
     .vaultguard-screen.is-leaving {
         opacity: 0 !important;
     }
+}
+
+/* === ATMOSPHERE VARIANTS === */
+[data-atmosphere="noir"] .vaultguard-overlay {
+  background-color: rgba(0,0,0,0.75);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+}
+[data-atmosphere="noir"] .vaultguard-screen .vaultguard-input {
+  border-radius: 4px !important;
+  background: rgba(0,0,0,0.65) !important;
+  border: 1px solid rgba(255,255,255,0.22) !important;
+}
+[data-atmosphere="frosted"] .vaultguard-overlay {
+  background-color: rgba(255,255,255,0.10);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+[data-atmosphere="frosted"] .vaultguard-screen .vaultguard-input {
+  background: rgba(255,255,255,0.18) !important;
+  border-color: rgba(255,255,255,0.30) !important;
+}
+[data-atmosphere="vivid"] .vaultguard-overlay {
+  background: linear-gradient(135deg, rgba(99,102,241,0.45) 0%, rgba(168,85,247,0.45) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+[data-atmosphere="vivid"] .vaultguard-screen .vaultguard-input {
+  border-color: rgba(168,85,247,0.7) !important;
+  box-shadow: 0 0 0 1px rgba(168,85,247,0.3), 0 4px 20px rgba(0,0,0,0.2) !important;
+}
+/* ============================================================================
+   TAMPER WARNING / DANGER ZONE
+   ============================================================================ */
+
+.vaultguard-tamper-warning {
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.4);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.9);
+  font-size: 13px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.vaultguard-danger-zone {
+  padding: 16px;
+  border: 1px solid var(--text-error);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.vaultguard-danger-zone p {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.vaultguard-danger-zone button {
+  background: var(--text-error);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
 }

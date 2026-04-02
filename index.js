@@ -18,6 +18,7 @@ const SALT_LENGTH = 16;
 const MAGIC_HEADER = "VAULTGUARD_ENCRYPTED_V1::";
 const NOTE_PROCESSING_BATCH_SIZE = 20;
 const PBKDF2_ITERATIONS = 250000;
+const LS_GUARD_KEY = 'locksidian_v1_guard';
 
 const DEFAULT_SETTINGS = {
     autoLockTime: 15,
@@ -34,7 +35,11 @@ const DEFAULT_SETTINGS = {
         inputWidth: 340,
         fontFamily: 'System Default',
         fontWeight: '500',
-        fontStyle: 'normal'
+        fontStyle: 'normal',
+        clockFormat: '24h',
+        atmosphere: 'minimal',
+        inputRadius: 100,
+        shakeIntensity: 6,
     }
 };
 
@@ -80,7 +85,7 @@ async function deriveKey(password, salt, iterations = PBKDF2_ITERATIONS) {
         },
         baseKey,
         { name: 'AES-GCM', length: 256 },
-        false,
+        true, // extractable: required so computeSentinelHmac can export raw bytes for HMAC
         ['encrypt', 'decrypt']
     );
     try { rawPassword.fill(0); } catch (e) {}
@@ -133,52 +138,60 @@ class ProgressModal extends obsidian.Modal {
         this.failedItems = 0;
     }
 
+    static create(app, title, totalItems) {
+        if (totalItems <= 3) return null;
+        const m = new ProgressModal(app, title, totalItems);
+        m.open();
+        return m;
+    }
+
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass('vaultguard-progress-modal');
-        
+
         contentEl.createEl('h2', { text: this.title });
-        
-        this.statusEl = contentEl.createEl('p', { 
-            text: `Processing: 0 / ${this.totalItems}`,
-            cls: 'progress-status'
-        });
-        
-        this.progressBarWrapper = contentEl.createDiv({ cls: 'progress-bar-wrapper' });
-        this.progressBar = this.progressBarWrapper.createDiv({ cls: 'progress-bar' });
-        this.progressBar.style.width = '0%';
-        
-        this.detailsEl = contentEl.createEl('p', { 
-            text: '',
-            cls: 'progress-details'
-        });
+
+        const svg = contentEl.createSvg('svg', { attr: { viewBox: '0 0 60 60', width: '80', height: '80' } });
+        svg.style.display = 'block';
+        svg.style.margin = '0 auto 16px';
+        svg.createSvg('circle', { attr: { cx: '30', cy: '30', r: '26', fill: 'none',
+            stroke: 'var(--background-modifier-border)', 'stroke-width': '5' } });
+        this.progressRing = svg.createSvg('circle', { attr: {
+            cx: '30', cy: '30', r: '26', fill: 'none',
+            stroke: 'var(--interactive-accent)', 'stroke-width': '5',
+            'stroke-dasharray': '163.4', 'stroke-dashoffset': '163.4',
+            'stroke-linecap': 'round', transform: 'rotate(-90 30 30)'
+        } });
+
+        this.statusEl = contentEl.createEl('p', { cls: 'progress-status',
+            text: `0 / ${this.totalItems}` });
+        this.fileEl = contentEl.createEl('p', { cls: 'progress-details', text: '' });
     }
 
-    updateProgress(processed, failed = 0) {
+    updateProgress(processed, failed = 0, currentFile = '') {
         this.processedItems = processed;
         this.failedItems = failed;
-        const percentage = Math.round((processed / this.totalItems) * 100);
-        
-        this.statusEl.textContent = `Processing: ${processed} / ${this.totalItems}`;
-        this.progressBar.style.width = `${percentage}%`;
-        
+        const offset = 163.4 * (1 - processed / this.totalItems);
+        this.progressRing.setAttribute('stroke-dashoffset', String(offset));
+        this.statusEl.textContent = `${processed} / ${this.totalItems}`;
+        if (currentFile) {
+            this.fileEl.textContent = currentFile.split('/').pop();
+        }
         if (failed > 0) {
-            this.detailsEl.textContent = `${failed} file(s) failed`;
-            this.detailsEl.style.color = 'var(--text-error)';
+            this.progressRing.setAttribute('stroke', 'var(--text-error)');
         }
     }
 
     complete() {
         if (this.failedItems > 0) {
-            this.statusEl.textContent = `Completed with ${this.failedItems} error(s)`;
+            this.statusEl.textContent = `${this.failedItems} error(s)`;
             this.statusEl.style.color = 'var(--text-error)';
         } else {
-            this.statusEl.textContent = 'Completed successfully!';
-            this.statusEl.style.color = 'var(--text-success)';
+            this.progressRing.setAttribute('stroke', 'var(--text-success)');
+            this.statusEl.textContent = 'Done';
         }
-        
-        setTimeout(() => this.close(), 500);
+        setTimeout(() => this.close(), 800);
     }
 }
 
@@ -192,28 +205,33 @@ class VaultGuardPlugin extends obsidian.Plugin {
         
         // State initialization
         this.state = {
-            isLocked: true,
             encryptionKey: null,
-            settings: this.deepClone(DEFAULT_SETTINGS)
+            settings: this.deepClone(DEFAULT_SETTINGS),
+            phase: 'LOCKED', // 'SETUP' | 'LOCKED' | 'UNLOCKED' | 'PROCESSING' | 'TAMPERED'
+            isProcessing: false,
         };
-        
+
         // UI references
         this.lockScreenEl = null;
         this.idleTimer = null;
+        this.clockInterval = null;
+        this._focusTrapListener = null;
         
         // Bind methods
         this.resetIdleTimer = this.resetIdleTimer.bind(this);
-        this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
+    }
+
+    get isLocked() {
+        return this.state.phase === 'LOCKED' || this.state.phase === 'TAMPERED';
     }
 
     async onload() {
-        console.log('VaultGuard: Loading plugin...');
         
         // Load settings and data
         await this.loadPluginData();
         
         // Show lock screen IMMEDIATELY if locked (before workspace is ready)
-        if (this.state.isLocked) {
+        if (this.isLocked) {
             // Add lock screen to DOM immediately to hide vault content
             this.showLockScreenImmediately();
             
@@ -242,15 +260,12 @@ class VaultGuardPlugin extends obsidian.Plugin {
         this.registerDomEvent(document, 'mousedown', this.resetIdleTimer);
         
         // Start idle timer if unlocked
-        if (!this.state.isLocked) {
+        if (!this.isLocked) {
             this.resetIdleTimer();
         }
-        
-        console.log('VaultGuard: Plugin loaded successfully');
     }
 
     onunload() {
-        console.log('VaultGuard: Unloading plugin...');
         this.removeLockScreen();
         clearTimeout(this.idleTimer);
     }
@@ -261,23 +276,117 @@ class VaultGuardPlugin extends obsidian.Plugin {
 
     async loadPluginData() {
         const storedData = await this.loadData() || {};
-        
-        // Merge visual preferences
+
         if (storedData.visualPrefs) {
             this.state.settings.visual = this.mergeDeep(
                 DEFAULT_SETTINGS.visual,
                 storedData.visualPrefs
             );
         }
-        
-        // Determine if vault is locked
-        this.state.isLocked = !!(storedData?.salt && storedData?.encryptedSettings);
-        
-        console.log('VaultGuard: Data loaded. Vault locked:', this.state.isLocked);
+
+        const hasCredentials = !!(storedData?.salt && storedData?.encryptedSettings);
+        const guardExists = await this.sentinelExists();
+        const lsGuard = this._lsRead();
+        const hasLS = !!(lsGuard?.salt);
+
+        if (!hasCredentials && !guardExists && !hasLS) {
+            // All three stores empty — genuine fresh install, no password ever set
+            this.state.phase = 'SETUP';
+
+        } else if (!hasCredentials) {
+            // data.json missing but at least one external guard survives — tamper
+            this.state.phase = 'TAMPERED';
+            console.warn('VaultGuard: credentials missing while guards remain — tamper detected');
+
+        } else {
+            // Credentials present — vault has been set up at some point
+
+            // Bootstrap LS if absent (Obsidian reinstall or first run after update)
+            // Do not treat absence of LS alone as tamper — it can be wiped by Obsidian reinstall
+            if (!hasLS) {
+                this._lsWrite(storedData.salt);
+            }
+
+            // Only compare salts when LS existed BEFORE this load (hasLS, not just-written)
+            const saltMismatch = hasLS && (lsGuard.salt !== storedData.salt);
+
+            if (saltMismatch) {
+                // data.json salt differs from trusted LS record — possible swap attack
+                this.state.phase = 'TAMPERED';
+                console.warn('VaultGuard: salt mismatch between data.json and localStorage — tamper suspected');
+            } else if (!guardExists) {
+                // Sentinel deleted — tamper or first run after sentinel feature was introduced
+                this.state.phase = 'TAMPERED';
+                console.warn('VaultGuard: sentinel missing — possible tamper detected');
+            } else {
+                this.state.phase = 'LOCKED';
+            }
+        }
+    }
+
+    // ========================================================================
+    // SENTINEL GUARD
+    // ========================================================================
+
+    _lsWrite(salt) {
+        try {
+            window.localStorage.setItem(
+                LS_GUARD_KEY,
+                JSON.stringify({ v: 1, salt })
+            );
+        } catch (e) {
+            console.warn('VaultGuard: localStorage write failed', e);
+        }
+    }
+
+    _lsRead() {
+        try {
+            const raw = window.localStorage.getItem(LS_GUARD_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async writeSentinel(key) {
+        const hmac = await this.computeSentinelHmac(key);
+        const path = `${this.manifest.dir}/locksidian-guard.json`;
+        await this.app.vault.adapter.write(path, JSON.stringify({ v: 1, check: hmac }));
+    }
+
+    async verifySentinel(key) {
+        const path = `${this.manifest.dir}/locksidian-guard.json`;
+        try {
+            const raw = await this.app.vault.adapter.read(path);
+            const { check } = JSON.parse(raw);
+            const expected = await this.computeSentinelHmac(key);
+            return check === expected;
+        } catch {
+            return false; // File missing or malformed = tampered
+        }
+    }
+
+    async computeSentinelHmac(key) {
+        const raw = await crypto.subtle.exportKey('raw', key);
+        const hmacKey = await crypto.subtle.importKey(
+            'raw', raw,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false, ['sign']
+        );
+        const sig = await crypto.subtle.sign(
+            'HMAC', hmacKey,
+            new TextEncoder().encode('locksidian-integrity-v1')
+        );
+        return bufferToBase64(sig);
+    }
+
+    async sentinelExists() {
+        const path = `${this.manifest.dir}/locksidian-guard.json`;
+        return await this.app.vault.adapter.exists(path);
     }
 
     async saveSettings() {
-        if (this.state.isLocked) {
+        if (this.isLocked) {
             console.warn('VaultGuard: Cannot save settings while locked');
             return;
         }
@@ -317,31 +426,24 @@ class VaultGuardPlugin extends obsidian.Plugin {
     // ========================================================================
 
     async lock() {
-        if (this.state.isLocked) {
+        if (this.isLocked) {
             return;
         }
-
-        console.log('VaultGuard: Locking vault...');
 
         // Encrypt notes if enabled
         if (this.state.settings.encryptNotes && this.state.encryptionKey) {
             const files = this.app.vault.getMarkdownFiles();
-            const progressModal = new ProgressModal(
-                this.app,
-                'Encrypting Notes',
-                files.length
-            );
-            progressModal.open();
+            const progressModal = ProgressModal.create(this.app, 'Encrypting Notes', files.length);
 
             await this.processAllNotes('encrypt', (processed, failed) => {
-                progressModal.updateProgress(processed, failed);
+                if (progressModal) progressModal.updateProgress(processed, failed);
             });
 
-            progressModal.complete();
+            if (progressModal) progressModal.complete();
         }
 
         // Clear sensitive state
-        this.state.isLocked = true;
+        this.state.phase = 'LOCKED';
         this.state.encryptionKey = null;
         clearTimeout(this.idleTimer);
 
@@ -350,49 +452,115 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     async unlock(password, triggerEl) {
-        const stored = await this.loadData();
-        
-        if (!stored?.salt) {
+        const wasTampered = this.state.phase === 'TAMPERED';
+        let stored = await this.loadData() || {};
+
+        // When data.json was deleted (TAMPERED), recover the salt from localStorage.
+        // The salt is mirrored there on every successful unlock and on setPassword().
+        if (wasTampered && !stored.salt) {
+            const lsGuard = this._lsRead();
+            if (lsGuard?.salt) {
+                stored = { salt: lsGuard.salt }; // encryptedSettings is gone — handled below
+            } else {
+                console.error('VaultGuard: No salt in data.json or localStorage — cannot recover');
+                return false;
+            }
+        }
+
+        if (!stored.salt) {
             console.error('VaultGuard: No salt found in stored data');
             return false;
         }
 
         try {
+            // Salt-swap check: if localStorage has a trusted salt, data.json must match it.
+            // Skip when we already know data.json is absent (we just sourced salt from LS above).
+            if (stored.encryptedSettings) {
+                const lsGuard = this._lsRead();
+                if (lsGuard?.salt && lsGuard.salt !== stored.salt) {
+                    throw new Error('Salt mismatch — data.json does not match trusted localStorage record');
+                }
+            }
+
             const saltBuf = new Uint8Array(base64ToBuffer(stored.salt));
             const key = await deriveKey(password, saltBuf);
-            const decryptedSettings = await decryptData(key, stored.encryptedSettings);
 
-            // Show success feedback
-            this.showSuccessFeedback(triggerEl);
+            let decryptedSettings;
 
-            // Update state
+            if (stored.encryptedSettings) {
+                // Normal path — decrypt settings, then verify sentinel.
+                // Sentinel is always checked here, including when wasTampered, because the
+                // sentinel is the independent oracle: if data.json was swapped the derived
+                // key will not reproduce the stored HMAC and unlock must be refused.
+                decryptedSettings = await decryptData(key, stored.encryptedSettings);
+                if (!(await this.verifySentinel(key))) {
+                    throw new Error('Sentinel verification failed — file missing or key mismatch');
+                }
+            } else {
+                // TAMPERED + data.json deleted — sentinel is the auth oracle.
+                // If the derived key produces the correct HMAC, the password is correct.
+                if (!(await this.verifySentinel(key))) {
+                    throw new Error('Incorrect password — sentinel HMAC did not match');
+                }
+                // encryptedSettings is unrecoverable. Detect note encryption from file content
+                // so we can decrypt notes before rebuilding data.json with the correct setting.
+                let notesEncrypted = false;
+                const mdFiles = this.app.vault.getMarkdownFiles();
+                for (const f of mdFiles.slice(0, 10)) {
+                    const c = await this.app.vault.read(f);
+                    if (c.startsWith(MAGIC_HEADER)) { notesEncrypted = true; break; }
+                }
+                decryptedSettings = {
+                    encryptNotes: notesEncrypted,
+                    autoLockTime: DEFAULT_SETTINGS.autoLockTime
+                };
+            }
+
+            // Credentials verified. Assign the key (needed for note decryption below)
+            // but keep isLocked=true until the screen is actually gone.
             this.state.encryptionKey = key;
             this.state.settings.encryptNotes = !!decryptedSettings.encryptNotes;
             this.state.settings.autoLockTime = decryptedSettings.autoLockTime ?? DEFAULT_SETTINGS.autoLockTime;
-            this.state.isLocked = false;
 
-            console.log('VaultGuard: Vault unlocked successfully');
-            new obsidian.Notice('Vault unlocked!');
+            // Write/refresh sentinel on every successful unlock
+            await this.writeSentinel(key);
 
-            // Decrypt notes if enabled
+            // Refresh localStorage mirror on every successful unlock
+            this._lsWrite(stored.salt);
+
+            // Decrypt notes BEFORE the tampered recovery block: if data.json was deleted and
+            // setPassword is called below, it generates a new key that overwrites state.encryptionKey.
+            // Notes must be decrypted with the original key while it is still assigned.
             if (this.state.settings.encryptNotes) {
                 const files = this.app.vault.getMarkdownFiles();
-                const progressModal = new ProgressModal(
-                    this.app,
-                    'Decrypting Notes',
-                    files.length
-                );
-                progressModal.open();
+                const progressModal = ProgressModal.create(this.app, 'Decrypting Notes', files.length);
 
                 await this.processAllNotes('decrypt', (processed, failed) => {
-                    progressModal.updateProgress(processed, failed);
+                    if (progressModal) progressModal.updateProgress(processed, failed);
                 });
 
-                progressModal.complete();
+                if (progressModal) progressModal.complete();
             }
 
-            // Remove lock screen
+            if (wasTampered) {
+                if (!stored.encryptedSettings) {
+                    // data.json was deleted — rebuild it from scratch with the verified password.
+                    // Notes are already decrypted above; setPassword now saves the correct
+                    // encryptNotes state and generates a fresh salt for future use.
+                    await this.setPassword(password);
+                } else {
+                    await this.saveData({ ...stored, tamperDetectedAt: null });
+                }
+                new obsidian.Notice('⚠ Vault tamper detected and resolved. Settings reset to defaults.', 8000);
+            }
+
+            // Remove lock screen, then flip state — lock screen gone and unlocked are atomic
             this.removeLockScreen();
+            this.state.phase = 'UNLOCKED';
+
+            // Show success feedback and notify
+            this.showSuccessFeedback(triggerEl);
+            new obsidian.Notice('Vault unlocked!');
 
             // Start idle timer
             this.resetIdleTimer();
@@ -416,39 +584,70 @@ class VaultGuardPlugin extends obsidian.Plugin {
         };
 
         const encryptedSettings = await encryptData(key, sensitive);
+        const saltB64 = bufferToBase64(salt); // capture before fill(0) zeros the buffer
 
         await this.saveData({
-            salt: bufferToBase64(salt),
+            salt: saltB64,
             encryptedSettings,
             visualPrefs: this.state.settings.visual
         });
 
         try { salt.fill(0); } catch (e) {}
 
-        this.state.isLocked = false;
+        this.state.phase = 'UNLOCKED';
+        await this.writeSentinel(key);
+        this._lsWrite(saltB64);
         this.resetIdleTimer();
-
-        console.log('VaultGuard: Password set successfully');
     }
 
     async changePassword(currentPassword, newPassword) {
         const stored = await this.loadData();
-        
+
         if (!stored?.salt) {
             return "Password not set.";
         }
 
+        let oldKey;
         try {
             const saltBuf = new Uint8Array(base64ToBuffer(stored.salt));
-            const key = await deriveKey(currentPassword, saltBuf);
-            await decryptData(key, stored.encryptedSettings);
+            oldKey = await deriveKey(currentPassword, saltBuf);
+            await decryptData(oldKey, stored.encryptedSettings);
 
-            // Current password is correct, set new password
-            await this.setPassword(newPassword);
-            return null;
+            // If sentinel is present, it must match the current key before we overwrite it
+            if (await this.sentinelExists() && !(await this.verifySentinel(oldKey))) {
+                return "Vault integrity check failed. Sentinel does not match current password.";
+            }
         } catch (err) {
             return "Current password is incorrect.";
         }
+
+        const encryptNotes = this.state.settings.encryptNotes;
+
+        // Decrypt notes with old key before switching
+        if (encryptNotes) {
+            const files = this.app.vault.getMarkdownFiles();
+            const decryptModal = ProgressModal.create(this.app, 'Decrypting Notes', files.length);
+            this.state.encryptionKey = oldKey;
+            await this.processAllNotes('decrypt', (processed, failed) => {
+                if (decryptModal) decryptModal.updateProgress(processed, failed);
+            });
+            if (decryptModal) decryptModal.close();
+        }
+
+        // Set new password (derives new key, writes new sentinel)
+        await this.setPassword(newPassword);
+
+        // Re-encrypt notes with new key
+        if (encryptNotes) {
+            const files = this.app.vault.getMarkdownFiles();
+            const encryptModal = ProgressModal.create(this.app, 'Encrypting Notes', files.length);
+            await this.processAllNotes('encrypt', (processed, failed) => {
+                if (encryptModal) encryptModal.updateProgress(processed, failed);
+            });
+            if (encryptModal) encryptModal.close();
+        }
+
+        return null;
     }
 
     // ========================================================================
@@ -456,42 +655,45 @@ class VaultGuardPlugin extends obsidian.Plugin {
     // ========================================================================
 
     async processAllNotes(mode, progressCallback) {
-        const files = this.app.vault.getMarkdownFiles();
-        let processedCount = 0;
-        let failedCount = 0;
+        this.state.isProcessing = true;
+        try {
+            const files = this.app.vault.getMarkdownFiles();
+            let processedCount = 0;
+            let failedCount = 0;
 
-        for (let i = 0; i < files.length; i += NOTE_PROCESSING_BATCH_SIZE) {
-            const batch = files.slice(i, i + NOTE_PROCESSING_BATCH_SIZE);
-            const operations = batch.map(file => 
-                mode === 'encrypt' ? this.encryptNote(file) : this.decryptNote(file)
-            );
+            for (let i = 0; i < files.length; i += NOTE_PROCESSING_BATCH_SIZE) {
+                const batch = files.slice(i, i + NOTE_PROCESSING_BATCH_SIZE);
+                const operations = batch.map(file =>
+                    mode === 'encrypt' ? this.encryptNote(file) : this.decryptNote(file)
+                );
 
-            const results = await Promise.allSettled(operations);
-            
-            results.forEach((result, index) => {
-                if (result.status === 'rejected') {
-                    failedCount++;
-                    console.error(
-                        `VaultGuard: Note "${batch[index].path}" failed to ${mode}:`,
-                        result.reason
-                    );
+                const results = await Promise.allSettled(operations);
+
+                results.forEach((result, index) => {
+                    if (result.status === 'rejected') {
+                        failedCount++;
+                        console.error(
+                            `VaultGuard: Note "${batch[index].path}" failed to ${mode}:`,
+                            result.reason
+                        );
+                    } else {
+                        processedCount++;
+                    }
+                });
+
+                if (progressCallback) {
+                    progressCallback(processedCount, failedCount);
                 }
-            });
-
-            processedCount += batch.length;
-            
-            if (progressCallback) {
-                progressCallback(processedCount, failedCount);
             }
-        }
 
-        if (failedCount > 0) {
-            new obsidian.Notice(
-                `VaultGuard: ${failedCount} file(s) failed to ${mode}. Check console for details.`
-            );
+            if (failedCount > 0) {
+                new obsidian.Notice(
+                    `VaultGuard: ${failedCount} file(s) failed to ${mode}. Check console for details.`
+                );
+            }
+        } finally {
+            this.state.isProcessing = false;
         }
-
-        console.log(`VaultGuard: ${mode} completed. Processed: ${processedCount}, Failed: ${failedCount}`);
     }
 
     async encryptNote(file) {
@@ -558,55 +760,56 @@ class VaultGuardPlugin extends obsidian.Plugin {
             return;
         }
 
-        console.log('VaultGuard: Showing lock screen immediately');
-
         // Create a minimal lock screen ASAP to hide vault content
         this.lockScreenEl = document.createElement('div');
         this.lockScreenEl.className = 'vaultguard-screen vaultguard-screen-loading';
         this.lockScreenEl.style.opacity = '1';
+        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
         
         // Simple background while loading
         this.lockScreenEl.style.backgroundColor = 'var(--background-primary)';
-        
+
+        if (this.state.phase === 'TAMPERED') {
+            const warning = document.createElement('div');
+            warning.className = 'vaultguard-tamper-warning';
+            warning.appendChild(this._createWarningIcon());
+            warning.appendChild(document.createTextNode('Vault data modified. Unlock to verify integrity.'));
+            this.lockScreenEl.appendChild(warning);
+        }
+
         document.body.appendChild(this.lockScreenEl);
     }
 
-    enhanceLockScreen() {
-        if (!this.lockScreenEl) {
-            return;
-        }
-
-        console.log('VaultGuard: Enhancing lock screen');
-
-        // Remove loading class and rebuild with full UI
-        this.lockScreenEl.classList.remove('vaultguard-screen-loading');
-        this.lockScreenEl.style.backgroundColor = '';
-        this.lockScreenEl.innerHTML = '';
-
-        // Create titlebar for dragging
-        this.lockScreenEl.createDiv({ cls: 'vaultguard-titlebar' });
-
-        // Create main content area
-        const mainContentEl = this.lockScreenEl.createDiv({ 
-            cls: 'vaultguard-main-content' 
-        });
-
-        // Add background
+    _buildLockScreenUI(el) {
+        el.createDiv({ cls: 'vaultguard-titlebar' });
+        const mainContentEl = el.createDiv({ cls: 'vaultguard-main-content' });
         mainContentEl.appendChild(this.createBackgroundElement());
-
-        // Add overlay
         mainContentEl.appendChild(this.createOverlayElement());
-
-        // Add content (username + password)
         mainContentEl.appendChild(this.createContentElement());
-
-        // Focus input after a short delay to ensure rendering is complete
         setTimeout(() => {
             const input = this.lockScreenEl?.querySelector('.vaultguard-input');
             if (input) {
                 input.focus();
             }
         }, 150);
+        this._focusTrapListener = (ev) => {
+            if (this.lockScreenEl && !this.lockScreenEl.contains(ev.target)) {
+                const input = this.lockScreenEl.querySelector('.vaultguard-input');
+                input?.focus();
+            }
+        };
+        document.addEventListener('focusin', this._focusTrapListener, true);
+    }
+
+    enhanceLockScreen() {
+        if (!this.lockScreenEl) {
+            return;
+        }
+        this.lockScreenEl.classList.remove('vaultguard-screen-loading');
+        this.lockScreenEl.style.backgroundColor = '';
+        this.lockScreenEl.innerHTML = '';
+        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
+        this._buildLockScreenUI(this.lockScreenEl);
     }
 
     showLockScreen() {
@@ -614,82 +817,73 @@ class VaultGuardPlugin extends obsidian.Plugin {
             console.warn('VaultGuard: Lock screen already showing');
             return;
         }
-
-        console.log('VaultGuard: Showing lock screen');
-
-        // Create lock screen container
         this.lockScreenEl = document.createElement('div');
         this.lockScreenEl.className = 'vaultguard-screen';
-
-        // Create titlebar for dragging
-        this.lockScreenEl.createDiv({ cls: 'vaultguard-titlebar' });
-
-        // Create main content area
-        const mainContentEl = this.lockScreenEl.createDiv({ 
-            cls: 'vaultguard-main-content' 
-        });
-
-        // Add background
-        mainContentEl.appendChild(this.createBackgroundElement());
-
-        // Add overlay
-        mainContentEl.appendChild(this.createOverlayElement());
-
-        // Add content (username + password)
-        mainContentEl.appendChild(this.createContentElement());
-
-        // Append to body
+        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
         document.body.appendChild(this.lockScreenEl);
-
-        // Focus input after a short delay to ensure rendering is complete
-        setTimeout(() => {
-            const input = this.lockScreenEl?.querySelector('.vaultguard-input');
-            if (input) {
-                input.focus();
-            }
-        }, 150);
+        this._buildLockScreenUI(this.lockScreenEl);
     }
 
-   removeLockScreen() {
-    if (!this.lockScreenEl) {
-         console.log('VaultGuard: lockScreenEl is null, returning early');
-        return;
-    }
-    console.log('VaultGuard: lockScreenEl at remove time:', this.lockScreenEl === document.querySelector('.vaultguard-screen'));
-    console.log('VaultGuard: Removing lock screen');
-    this.lockScreenEl.classList.add('is-leaving');
-
-    const el = this.lockScreenEl;
-    this.lockScreenEl = null;
-
-    const cleanup = () => {
-        if (el && el.parentNode) {
-            el.remove();
+    removeLockScreen() {
+        if (!this.lockScreenEl) {
+            return;
         }
-    };
 
-    el.addEventListener('animationend', cleanup, { once: true });
-    setTimeout(cleanup, 500);
-}
+        if (this._focusTrapListener) {
+            document.removeEventListener('focusin', this._focusTrapListener, true);
+            this._focusTrapListener = null;
+        }
+
+        this.lockScreenEl.classList.add('is-leaving');
+
+        clearInterval(this.clockInterval);
+        this.clockInterval = null;
+
+        const el = this.lockScreenEl;
+        this.lockScreenEl = null;
+
+        const cleanup = () => {
+            if (el && el.parentNode) {
+                el.remove();
+            }
+        };
+
+        el.addEventListener('animationend', cleanup, { once: true });
+        setTimeout(cleanup, 500);
+    }
 
     createContentElement() {
         const content = document.createElement('div');
         content.className = 'vaultguard-content';
+
+        if (this.state.phase === 'TAMPERED') {
+            const warning = content.createEl('div', { cls: 'vaultguard-tamper-warning' });
+            warning.appendChild(this._createWarningIcon());
+            warning.appendChild(document.createTextNode('Vault data modified. Unlock to verify integrity.'));
+        }
 
         const visual = this.state.settings.visual;
 
         // Apply CSS custom properties
         content.style.setProperty('--vaultguard-ui-scale', (visual.uiScale / 100).toString());
         content.style.setProperty('--vaultguard-input-width', `${visual.inputWidth}px`);
+        content.style.setProperty('--vaultguard-input-radius', String(visual.inputRadius ?? 100));
+        content.style.setProperty('--vaultguard-shake-intensity', `${visual.shakeIntensity ?? 6}px`);
+        content.style.setProperty('--vaultguard-font-family',
+            visual.fontFamily === 'System Default' ? 'inherit' : visual.fontFamily
+        );
+        content.style.setProperty('--vaultguard-font-weight', visual.fontWeight);
+        content.style.setProperty('--vaultguard-font-style', visual.fontStyle);
+
+        // Clock
+        const clockEl = content.createEl('div', { cls: 'vaultguard-clock' });
+        const dateEl = content.createEl('div', { cls: 'vaultguard-date' });
+        this.updateClock(clockEl, dateEl);
+        this.clockInterval = setInterval(() => this.updateClock(clockEl, dateEl), 1000);
 
         // Username display
         const username = content.createEl('div', { cls: 'vaultguard-username' });
         username.textContent = visual.username;
-        username.style.setProperty('--vaultguard-font-family', 
-            visual.fontFamily === 'System Default' ? 'inherit' : visual.fontFamily
-        );
-        username.style.setProperty('--vaultguard-font-weight', visual.fontWeight);
-        username.style.setProperty('--vaultguard-font-style', visual.fontStyle);
 
         // Password input
         content.appendChild(this.createPasswordInputElement());
@@ -709,8 +903,8 @@ class VaultGuardPlugin extends obsidian.Plugin {
         input.addEventListener('keydown', async (ev) => {
             if (ev.key === 'Enter') {
                 ev.preventDefault();
-                const password = input.value.trim();
-                
+                const password = input.value;
+
                 if (!password) {
                     return;
                 }
@@ -759,6 +953,11 @@ class VaultGuardPlugin extends obsidian.Plugin {
             });
         }
 
+        media.onerror = () => {
+            const fallback = this.createFallbackBackground();
+            media.parentNode?.replaceChild(fallback, media);
+        };
+
         // Set source
         if (value === 'local') {
             const extension = type === 'video' ? 'mp4' : 'jpg';
@@ -772,6 +971,42 @@ class VaultGuardPlugin extends obsidian.Plugin {
         }
 
         return media;
+    }
+
+    updateClock(clockEl, dateEl) {
+        const now = new Date();
+        const fmt = this.state.settings.visual.clockFormat || '24h';
+        if (fmt === 'off') {
+            clockEl.style.display = 'none';
+            dateEl.style.display = 'none';
+            return;
+        }
+        if (fmt === '12h') {
+            clockEl.textContent = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+        } else {
+            clockEl.textContent = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+        dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+
+    _createWarningIcon() {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        svg.classList.add('vaultguard-warning-icon');
+        svg.innerHTML = '<polygon points="10.29 3.86 1.82 18 22.18 18 13.71 3.86 10.29 3.86"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+        return svg;
+    }
+
+    createFallbackBackground() {
+        const el = document.createElement('div');
+        el.className = 'vaultguard-background-media';
+        el.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+        return el;
     }
 
     createOverlayElement() {
@@ -807,27 +1042,23 @@ class VaultGuardPlugin extends obsidian.Plugin {
     // ========================================================================
 
     resetIdleTimer() {
+        if (this.state.isProcessing) return;
+
         clearTimeout(this.idleTimer);
 
         const timeoutMinutes = this.state.settings.autoLockTime;
 
-        if (this.state.isLocked || !timeoutMinutes || timeoutMinutes <= 0) {
+        if (this.isLocked || !timeoutMinutes || timeoutMinutes <= 0) {
             return;
         }
 
         this.idleTimer = setTimeout(() => {
-            new obsidian.Notice('Vault locked due to inactivity.');
-            this.lock();
+            if (!this.isLocked) {
+                this.lock();
+            }
         }, 60000 * timeoutMinutes);
     }
 
-    handleBeforeUnload(event) {
-        if (this.state.settings.encryptNotes && !this.state.isLocked) {
-            event.preventDefault();
-            event.returnValue = 'Your notes are not encrypted. Are you sure you want to close?';
-            return event.returnValue;
-        }
-    }
 
     // ========================================================================
     // UTILITIES
@@ -862,20 +1093,25 @@ class AddBackgroundModal extends obsidian.Modal {
     constructor(app, plugin) {
         super(app);
         this.plugin = plugin;
+        this.didComplete = false;
     }
 
     onOpen() {
-        this.contentEl.empty();
-        this.contentEl.createEl('h2', { text: 'Add New Background' });
-        this.contentEl.createEl('p', { 
-            text: 'Add a background from a web URL, a solid color, or a local file.' 
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('vaultguard-add-bg-modal');
+
+        contentEl.createEl('h2', { text: 'Add Background' });
+        contentEl.createEl('p', {
+            cls: 'vaultguard-modal-desc',
+            text: 'Add a background from a web URL, a solid color, or a local file.'
         });
 
         let type = 'image';
         let textComponent;
 
-        new obsidian.Setting(this.contentEl)
-            .setName('Source Type')
+        new obsidian.Setting(contentEl)
+            .setName('Source type')
             .addDropdown(dd => dd
                 .addOption('image', 'Image URL')
                 .addOption('video', 'Video URL')
@@ -883,28 +1119,29 @@ class AddBackgroundModal extends obsidian.Modal {
                 .onChange(value => type = value)
             );
 
-        new obsidian.Setting(this.contentEl)
-            .setName('Source Value')
+        new obsidian.Setting(contentEl)
+            .setName('Source value')
             .addText(text => {
                 text.setPlaceholder('Enter URL or #hex code...');
                 textComponent = text;
             });
 
-        new obsidian.Setting(this.contentEl)
+        new obsidian.Setting(contentEl)
             .addButton(btn => btn
-                .setButtonText('Add from Source')
+                .setButtonText('Add Background')
                 .setCta()
                 .onClick(() => {
                     this.addBackground(type, textComponent.getValue());
                 })
             );
 
-        this.contentEl.createEl('h4', { text: 'Or Upload a Local File' });
-        
-        new obsidian.Setting(this.contentEl)
+        contentEl.createDiv({ cls: 'vaultguard-modal-divider' })
+            .createSpan({ text: 'or upload a local file' });
+
+        new obsidian.Setting(contentEl)
             .setDesc('The file will be copied into the plugin folder.')
             .addButton(btn => btn
-                .setButtonText('Choose File...')
+                .setButtonText('Choose File…')
                 .onClick(() => {
                     const input = document.createElement('input');
                     input.type = 'file';
@@ -953,12 +1190,15 @@ class AddBackgroundModal extends obsidian.Modal {
 
         this.plugin.state.settings.visual.activeBackgroundId = id;
         await this.plugin.saveSettings();
+        this.didComplete = true;
         this.close();
     }
 
     onClose() {
         this.contentEl.empty();
-        this.plugin.app.setting.openTabById(this.plugin.manifest.id);
+        if (this.didComplete) {
+            this.plugin.app.setting.openTabById(this.plugin.manifest.id);
+        }
     }
 }
 
@@ -967,16 +1207,14 @@ class AddBackgroundModal extends obsidian.Modal {
 // ============================================================================
 
 class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
-    async display() {
+    display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'VaultGuard Settings' });
+        containerEl.addClass('vaultguard-settings');
 
-        const storedData = await this.plugin.loadData();
-
-        if (!storedData?.salt) {
+        if (this.plugin.state.phase === 'SETUP') {
             this.renderSetInitialPassword(containerEl);
-        } else if (this.plugin.state.isLocked) {
+        } else if (this.plugin.isLocked) {
             containerEl.createEl('p', { 
                 text: 'Unlock your vault to change settings.' 
             });
@@ -987,7 +1225,7 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
 
     renderSetInitialPassword(containerEl) {
         containerEl.createEl('p', { 
-            text: 'Welcome to VaultGuard! Please set a master password to secure your vault.' 
+            text: 'Welcome to Vault Guard! Please set a master password to secure your vault.' 
         });
 
         const setting = new obsidian.Setting(containerEl)
@@ -1002,36 +1240,33 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
 
     renderFullSettings(containerEl) {
         // ====================================================================
-        // SECURITY SECTION
+        // ACCOUNT SECTION
         // ====================================================================
-        
-        containerEl.createEl('h3', { text: 'Security' });
 
-        const changePasswordSetting = new obsidian.Setting(containerEl)
-            .setName('Change Master Password')
-            .setDesc('You must provide your current password to set a new one.');
+        containerEl.createEl('h3', { text: 'Account' });
 
-        const currentPassInput = changePasswordSetting.controlEl.createEl('input', {
-            attr: {
-                type: 'password',
-                placeholder: 'Current password',
-                style: 'margin-right: 5px;'
-            }
+        const cpCard = containerEl.createDiv({ cls: 'vaultguard-cp-card' });
+        cpCard.createEl('div', { cls: 'vaultguard-cp-title', text: 'Change Master Password' });
+        cpCard.createEl('div', { cls: 'vaultguard-cp-desc', text: 'Enter your current password, then choose a new one.' });
+
+        const cpForm = cpCard.createDiv({ cls: 'vaultguard-cp-form' });
+
+        const currentPassInput = cpForm.createEl('input', {
+            cls: 'vaultguard-cp-input',
+            attr: { type: 'password', placeholder: 'Current password', autocomplete: 'current-password' }
         });
 
-        const newPassInput = changePasswordSetting.controlEl.createEl('input', {
-            attr: {
-                type: 'password',
-                placeholder: 'New password',
-                style: 'margin-right: 5px;'
-            }
+        const newPassInput = cpForm.createEl('input', {
+            cls: 'vaultguard-cp-input',
+            attr: { type: 'password', placeholder: 'New password', autocomplete: 'new-password' }
         });
 
-        const confirmButton = changePasswordSetting.controlEl.createEl('button', {
-            text: 'Change'
-        });
+        this.createPasswordStrengthUI({ infoEl: cpForm }, null, newPassInput);
 
-        this.createPasswordStrengthUI(changePasswordSetting, null, newPassInput);
+        const confirmButton = cpForm.createEl('button', {
+            cls: 'vaultguard-cp-btn',
+            text: 'Change Password'
+        });
 
         confirmButton.addEventListener('click', async () => {
             const currentPass = currentPassInput.value;
@@ -1047,7 +1282,9 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                 return;
             }
 
+            confirmButton.disabled = true;
             const error = await this.plugin.changePassword(currentPass, newPass);
+            confirmButton.disabled = false;
 
             if (error) {
                 new obsidian.Notice(error);
@@ -1059,49 +1296,81 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
         });
 
         // ====================================================================
-        // GENERAL SECTION
+        // AUTO-LOCK SECTION
         // ====================================================================
-        
-        containerEl.createEl('h3', { text: 'General' });
+
+        containerEl.createEl('h3', { text: 'Auto-Lock' });
 
         new obsidian.Setting(containerEl)
-            .setName('Auto-lock timer')
-            .setDesc('Lock the vault after a period of inactivity. Set to 0 to disable.')
-            .addText(text => text
-                .setPlaceholder('minutes')
+            .setName('Lock after inactivity')
+            .setDesc('Vault locks automatically after the selected period. Restarts on any input.')
+            .addDropdown(d => d
+                .addOption('0', 'Off')
+                .addOption('1', '1 minute')
+                .addOption('5', '5 minutes')
+                .addOption('15', '15 minutes')
+                .addOption('30', '30 minutes')
+                .addOption('60', '1 hour')
                 .setValue(String(this.plugin.state.settings.autoLockTime))
-                .onChange(async value => {
-                    const parsed = parseInt(value, 10);
-                    this.plugin.state.settings.autoLockTime = isNaN(parsed) ? 0 : parsed;
+                .onChange(async v => {
+                    this.plugin.state.settings.autoLockTime = parseInt(v, 10);
                     await this.plugin.saveSettings();
+                    this.plugin.resetIdleTimer();
                 })
             );
 
         // ====================================================================
-        // VAULT ENCRYPTION SECTION
+        // LOCKSCREEN SECTION
         // ====================================================================
-        
-        containerEl.createEl('h3', { text: 'Vault Encryption' });
+
+        containerEl.createEl('h3', { text: 'Lockscreen' });
 
         new obsidian.Setting(containerEl)
-            .setName('Encrypt notes on disk')
-            .setDesc(this.createWarningFragment())
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.state.settings.encryptNotes)
-                .onChange(async value => {
-                    this.plugin.state.settings.encryptNotes = value;
+            .setName('Atmosphere')
+            .setDesc('Overall visual style of the lock screen.')
+            .addDropdown(d => d
+                .addOption('minimal', 'Minimal')
+                .addOption('noir', 'Noir')
+                .addOption('frosted', 'Frosted')
+                .addOption('vivid', 'Vivid')
+                .setValue(this.plugin.state.settings.visual.atmosphere)
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.atmosphere = v;
                     await this.plugin.saveSettings();
-                    new obsidian.Notice(
-                        `Note encryption will be ${value ? 'ENABLED' : 'DISABLED'} on the next lock event.`
-                    );
                 })
             );
 
-        // ====================================================================
-        // APPEARANCE SECTION
-        // ====================================================================
-        
-        containerEl.createEl('h3', { text: 'Appearance' });
+        new obsidian.Setting(containerEl)
+            .setName('Clock')
+            .setDesc('Time display format on the lock screen.')
+            .addDropdown(d => d
+                .addOption('off', 'Off')
+                .addOption('24h', '24h')
+                .addOption('12h', '12h')
+                .setValue(this.plugin.state.settings.visual.clockFormat)
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.clockFormat = v;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new obsidian.Setting(containerEl)
+            .setName('Lockscreen font')
+            .setDesc('Applies to all text on the lock screen — clock, date, username.')
+            .addDropdown(d => d
+                .addOption('System Default', 'System Default')
+                .addOption('system-ui, sans-serif', 'System UI')
+                .addOption('Inter, system-ui, sans-serif', 'Inter')
+                .addOption('Arial, sans-serif', 'Arial')
+                .addOption('Georgia, serif', 'Georgia')
+                .addOption('Verdana, sans-serif', 'Verdana')
+                .addOption('Courier New, monospace', 'Courier New')
+                .setValue(this.plugin.state.settings.visual.fontFamily)
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.fontFamily = v;
+                    await this.plugin.saveSettings();
+                })
+            );
 
         new obsidian.Setting(containerEl)
             .setName('Username')
@@ -1114,28 +1383,12 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                 })
             );
 
-        new obsidian.Setting(containerEl)
-            .setName('Font Family')
-            .setDesc('Font for the username on the lock screen.')
-            .addDropdown(d => d
-                .addOption('System Default', 'System Default')
-                .addOption('Arial, sans-serif', 'Arial')
-                .addOption('Georgia, serif', 'Georgia')
-                .addOption('Verdana, sans-serif', 'Verdana')
-                .addOption('Courier New, monospace', 'Courier New')
-                .setValue(this.plugin.state.settings.visual.fontFamily)
-                .onChange(async v => {
-                    this.plugin.state.settings.visual.fontFamily = v;
-                    await this.plugin.saveSettings();
-                })
-            );
-
         const fontStyleSetting = new obsidian.Setting(containerEl)
-            .setName('Font Style');
+            .setName('Font style');
 
         fontStyleSetting.controlEl.createEl('span', {
+            cls: 'vaultguard-toggle-label',
             text: 'Bold',
-            attr: { 'style': 'margin-right: 5px;' }
         });
 
         fontStyleSetting.addToggle(t => t
@@ -1147,8 +1400,8 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
         );
 
         fontStyleSetting.controlEl.createEl('span', {
+            cls: 'vaultguard-toggle-label vaultguard-toggle-label--gap',
             text: 'Italic',
-            attr: { 'style': 'margin-left: 20px; margin-right: 5px;' }
         });
 
         fontStyleSetting.addToggle(t => t
@@ -1159,9 +1412,15 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
             })
         );
 
+        // ====================================================================
+        // INPUT CUSTOMISATION SECTION
+        // ====================================================================
+
+        containerEl.createEl('h3', { text: 'Input Customisation' });
+
         new obsidian.Setting(containerEl)
             .setName('UI Scale')
-            .setDesc('Adjust the size of the username and password input.')
+            .setDesc('Scales the clock, username, and password input.')
             .addSlider(s => s
                 .setLimits(75, 150, 5)
                 .setValue(this.plugin.state.settings.visual.uiScale)
@@ -1174,7 +1433,7 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
 
         new obsidian.Setting(containerEl)
             .setName('Input Width')
-            .setDesc('Adjust the width of the password input.')
+            .setDesc('Width of the password entry bar in pixels.')
             .addSlider(s => s
                 .setLimits(280, 440, 10)
                 .setValue(this.plugin.state.settings.visual.inputWidth)
@@ -1185,12 +1444,73 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                 })
             );
 
+        new obsidian.Setting(containerEl)
+            .setName('Bar rounding')
+            .setDesc('Shape of the password input. 0 = square, 100 = pill.')
+            .addSlider(s => s
+                .setLimits(0, 100, 5)
+                .setValue(this.plugin.state.settings.visual.inputRadius)
+                .setDynamicTooltip()
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.inputRadius = v;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new obsidian.Setting(containerEl)
+            .setName('Shake intensity')
+            .setDesc('How much the bar shakes on a wrong password. 0 to disable.')
+            .addSlider(s => s
+                .setLimits(0, 20, 1)
+                .setValue(this.plugin.state.settings.visual.shakeIntensity)
+                .setDynamicTooltip()
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.shakeIntensity = v;
+                    await this.plugin.saveSettings();
+                })
+            );
+
         // ====================================================================
         // BACKGROUND SECTION
         // ====================================================================
-        
-        containerEl.createEl('h4', { text: 'Lockscreen Background' });
+
+        containerEl.createEl('h3', { text: 'Background' });
         this.renderThumbnailGrid(containerEl);
+
+        // ====================================================================
+        // NOTE ENCRYPTION SECTION
+        // ====================================================================
+
+        containerEl.createEl('h3', { text: 'Note Encryption' });
+
+        if (!this.plugin.state.settings.encryptNotes) {
+            new obsidian.Setting(containerEl)
+                .setName('Encrypt notes on disk')
+                .setDesc(this.createWarningFragment())
+                .addToggle(toggle => toggle
+                    .setValue(false)
+                    .onChange(async value => {
+                        this.plugin.state.settings.encryptNotes = value;
+                        await this.plugin.saveSettings();
+                        new obsidian.Notice('Encryption will activate on next lock.');
+                    })
+                );
+        } else {
+            const dangerZone = containerEl.createDiv({ cls: 'vaultguard-danger-zone' });
+            dangerZone.createEl('p', {
+                text: 'Note encryption is active. Notes are encrypted on lock and decrypted on unlock. Disabling will immediately decrypt all notes.'
+            });
+            const disableBtn = dangerZone.createEl('button', { text: 'Disable Note Encryption' });
+            disableBtn.addEventListener('click', async () => {
+                if (confirm('Disable note encryption? This will decrypt all notes now.')) {
+                    this.plugin.state.settings.encryptNotes = false;
+                    await this.plugin.processAllNotes('decrypt', null);
+                    await this.plugin.saveSettings();
+                    new obsidian.Notice('Note encryption disabled. All notes decrypted.');
+                    this.display();
+                }
+            });
+        }
     }
 
     renderThumbnailGrid(containerEl) {
@@ -1212,15 +1532,19 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                     cls: 'thumbnail-image',
                     attr: { src }
                 });
-            } else {
-                const iconContainer = item.createDiv({ cls: 'thumbnail-icon' });
-
-                if (bg.type === 'video') {
-                    iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>`;
-                } else if (bg.type === 'color') {
-                    iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>`;
-                    iconContainer.style.backgroundColor = bg.value;
-                }
+            } else if (bg.type === 'video') {
+                const videoSrc = bg.value === 'local'
+                    ? this.app.vault.adapter.getResourcePath(`${this.plugin.manifest.dir}/bg.mp4`)
+                    : src;
+                const vid = item.createEl('video', { cls: 'thumbnail-image' });
+                vid.muted = true;
+                vid.preload = 'metadata';
+                vid.src = videoSrc;
+                vid.addEventListener('loadedmetadata', () => { vid.currentTime = 0.001; });
+                item.createDiv({ cls: 'thumbnail-icon thumbnail-video-overlay' }).innerHTML =
+                    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>`;
+            } else if (bg.type === 'color') {
+                item.style.backgroundColor = bg.value;
             }
 
             item.addEventListener('click', async () => {
@@ -1324,11 +1648,9 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
 
         input.addEventListener('input', () => {
             const val = input.value;
-            console.log("input event fired, val:", val);
             if (val) {
                 container.style.display = '';
                 const res = zxcvbn(val);
-                console.log("zxcvbn result:", zxcvbn(val));
                 bar.className = 'password-strength-bar strength-' + res.score;
                 text.textContent = res.feedback.warning || ' ';
             } else {
