@@ -42,16 +42,72 @@
 }
 
 /* ============================================================================
-   TITLEBAR (for window dragging)
+   NAVBAR — shown for hidden and obsidian frame styles.
+   Matches Obsidian's titlebar background so it blends seamlessly.
+   native frame: omitted entirely (OS chrome handles it).
    ============================================================================ */
 
-.vaultguard-titlebar {
+.vaultguard-navbar {
   flex-shrink: 0;
-  height: 30px;
+  height: 34px;
   width: 100%;
   -webkit-app-region: drag;
-  background: transparent;
+  background-color: var(--titlebar-background, var(--background-secondary));
+  position: relative;
   z-index: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* Match Obsidian's own focused-window titlebar colour */
+body.is-focused .vaultguard-navbar {
+  background-color: var(--titlebar-background-focused, var(--background-secondary-alt));
+}
+
+/* ============================================================================
+   WINDOW CONTROLS — rendered inside .vaultguard-navbar on Windows/Linux
+   where Electron's own controls are web content covered by the lockscreen.
+   macOS: traffic lights are native OS overlays — always visible, never needed here.
+   ============================================================================ */
+
+.vg-window-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.vg-wc-btn {
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: var(--titlebar-text-color, rgba(255, 255, 255, 0.55));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+.vg-wc-btn svg {
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.vg-wc-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--titlebar-text-color, white);
+}
+
+.vg-wc-close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 /* ============================================================================
