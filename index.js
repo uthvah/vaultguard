@@ -760,22 +760,13 @@ class VaultGuardPlugin extends obsidian.Plugin {
             return;
         }
 
-        // Create a minimal lock screen ASAP to hide vault content
+        // Create a minimal lock screen ASAP to hide vault content.
+        // Keep it as a plain dark screen — the full UI (including any tamper
+        // warning) is rendered in enhanceLockScreen() once the workspace is ready.
         this.lockScreenEl = document.createElement('div');
         this.lockScreenEl.className = 'vaultguard-screen vaultguard-screen-loading';
         this.lockScreenEl.style.opacity = '1';
-        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
-        
-        // Simple background while loading
         this.lockScreenEl.style.backgroundColor = 'var(--background-primary)';
-
-        if (this.state.phase === 'TAMPERED') {
-            const warning = document.createElement('div');
-            warning.className = 'vaultguard-tamper-warning';
-            warning.appendChild(this._createWarningIcon());
-            warning.appendChild(document.createTextNode('Vault data modified. Unlock to verify integrity.'));
-            this.lockScreenEl.appendChild(warning);
-        }
 
         document.body.appendChild(this.lockScreenEl);
     }
@@ -801,6 +792,40 @@ class VaultGuardPlugin extends obsidian.Plugin {
         document.addEventListener('focusin', this._focusTrapListener, true);
     }
 
+    _buildTamperedUI(el) {
+        // Titlebar so the window remains draggable on desktop
+        el.createDiv({ cls: 'vaultguard-titlebar' });
+
+        const screen = el.createDiv({ cls: 'vaultguard-tamper-screen' });
+        const panel  = screen.createDiv({ cls: 'vaultguard-tamper-panel' });
+
+        // ── Header row: icon + heading ────────────────────────────────────────
+        const header = panel.createDiv({ cls: 'vaultguard-tamper-panel-header' });
+        header.appendChild(this._createWarningIcon());
+        header.createEl('span', { cls: 'vaultguard-tamper-panel-title', text: 'Integrity Warning' });
+
+        // ── Body: explanation ─────────────────────────────────────────────────
+        panel.createEl('p', {
+            cls: 'vaultguard-tamper-panel-message',
+            text: 'Plugin data was modified or could not be verified. ' +
+                  'Enter your master password to confirm your identity and restore access.'
+        });
+
+        // ── Password input ────────────────────────────────────────────────────
+        panel.appendChild(this.createPasswordInputElement());
+
+        // Focus the input once the panel is in the DOM
+        setTimeout(() => panel.querySelector('.vaultguard-input')?.focus(), 100);
+
+        // Focus trap — keep keyboard inside the lock screen
+        this._focusTrapListener = (ev) => {
+            if (this.lockScreenEl && !this.lockScreenEl.contains(ev.target)) {
+                this.lockScreenEl.querySelector('.vaultguard-input')?.focus();
+            }
+        };
+        document.addEventListener('focusin', this._focusTrapListener, true);
+    }
+
     enhanceLockScreen() {
         if (!this.lockScreenEl) {
             return;
@@ -808,8 +833,15 @@ class VaultGuardPlugin extends obsidian.Plugin {
         this.lockScreenEl.classList.remove('vaultguard-screen-loading');
         this.lockScreenEl.style.backgroundColor = '';
         this.lockScreenEl.innerHTML = '';
-        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
-        this._buildLockScreenUI(this.lockScreenEl);
+
+        if (this.state.phase === 'TAMPERED') {
+            // Do not apply user visual preferences — data.json may be absent/compromised.
+            // Render a stripped-down panel: warning + password input only.
+            this._buildTamperedUI(this.lockScreenEl);
+        } else {
+            this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
+            this._buildLockScreenUI(this.lockScreenEl);
+        }
     }
 
     showLockScreen() {
@@ -819,9 +851,14 @@ class VaultGuardPlugin extends obsidian.Plugin {
         }
         this.lockScreenEl = document.createElement('div');
         this.lockScreenEl.className = 'vaultguard-screen';
-        this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
         document.body.appendChild(this.lockScreenEl);
-        this._buildLockScreenUI(this.lockScreenEl);
+
+        if (this.state.phase === 'TAMPERED') {
+            this._buildTamperedUI(this.lockScreenEl);
+        } else {
+            this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
+            this._buildLockScreenUI(this.lockScreenEl);
+        }
     }
 
     removeLockScreen() {
@@ -855,12 +892,6 @@ class VaultGuardPlugin extends obsidian.Plugin {
     createContentElement() {
         const content = document.createElement('div');
         content.className = 'vaultguard-content';
-
-        if (this.state.phase === 'TAMPERED') {
-            const warning = content.createEl('div', { cls: 'vaultguard-tamper-warning' });
-            warning.appendChild(this._createWarningIcon());
-            warning.appendChild(document.createTextNode('Vault data modified. Unlock to verify integrity.'));
-        }
 
         const visual = this.state.settings.visual;
 
@@ -992,6 +1023,8 @@ class VaultGuardPlugin extends obsidian.Plugin {
     _createWarningIcon() {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('width', '18');
+        svg.setAttribute('height', '18');
         svg.setAttribute('fill', 'none');
         svg.setAttribute('stroke', 'currentColor');
         svg.setAttribute('stroke-width', '2');

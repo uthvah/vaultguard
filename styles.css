@@ -692,7 +692,81 @@
    TAMPER WARNING / DANGER ZONE
    ============================================================================ */
 
+/* ============================================================================
+   WARNING ICON (used in tamper panel)
+   ============================================================================ */
+
+.vaultguard-warning-icon {
+  /* Explicit dimensions prevent the SVG from expanding before CSS loads */
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+  color: #e67e22;
+}
+
+/* ============================================================================
+   TAMPER SCREEN — minimal view shown when vault integrity cannot be confirmed
+   (no user visual preferences are applied here)
+   ============================================================================ */
+
+.vaultguard-tamper-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #0f0f0f;
+  animation: fadeInContent 0.4s ease forwards;
+}
+
+.vaultguard-tamper-panel {
+  width: 100%;
+  max-width: 380px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(230, 126, 34, 0.35);
+  border-radius: 12px;
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.vaultguard-tamper-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #e67e22;
+}
+
+.vaultguard-tamper-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e67e22;
+}
+
+.vaultguard-tamper-panel-message {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+/* Password input inside the tamper panel — inherits the glass style
+   but needs a fixed width since --vaultguard-input-width isn't set here */
+.vaultguard-tamper-panel .vaultguard-password-wrapper {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Legacy banner — kept for any callers that may still reference it */
 .vaultguard-tamper-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(231, 76, 60, 0.15);
   border: 1px solid rgba(231, 76, 60, 0.4);
   border-radius: 8px;
