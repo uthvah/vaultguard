@@ -18,7 +18,7 @@ const SALT_LENGTH = 16;
 const MAGIC_HEADER = "VAULTGUARD_ENCRYPTED_V1::";
 const NOTE_PROCESSING_BATCH_SIZE = 20;
 const PBKDF2_ITERATIONS = 250000;
-const LS_GUARD_KEY = 'locksidian_v1_guard';
+const LS_GUARD_KEY_PREFIX = 'locksidian_v1_guard';
 
 const DEFAULT_SETTINGS = {
     autoLockTime: 15,
@@ -290,13 +290,18 @@ class VaultGuardPlugin extends obsidian.Plugin {
         const hasLS = !!(lsGuard?.salt);
 
         if (!hasCredentials && !guardExists && !hasLS) {
-            // All three stores empty — genuine fresh install, no password ever set
+            // All three stores empty — genuine fresh install or new vault.
+            // Because _lsKey is scoped to this vault's path, a stale entry from
+            // any other vault will never appear here, so this check is trustworthy.
             this.state.phase = 'SETUP';
 
         } else if (!hasCredentials) {
-            // data.json missing but at least one external guard survives — tamper
+            // At least one external guard survives without credentials — suspicious.
+            // (guardExists=true means the sentinel file is present despite data.json
+            //  being gone; hasLS=true means this vault's LS record exists without
+            //  matching credentials — either way something is wrong.)
             this.state.phase = 'TAMPERED';
-            console.warn('VaultGuard: credentials missing while guards remain — tamper detected');
+            console.warn('VaultGuard: guard(s) present but credentials missing — tamper detected');
 
         } else {
             // Credentials present — vault has been set up at some point
@@ -314,10 +319,11 @@ class VaultGuardPlugin extends obsidian.Plugin {
                 // data.json salt differs from trusted LS record — possible swap attack
                 this.state.phase = 'TAMPERED';
                 console.warn('VaultGuard: salt mismatch between data.json and localStorage — tamper suspected');
-            } else if (!guardExists) {
-                // Sentinel deleted — tamper or first run after sentinel feature was introduced
+            } else if (!guardExists && hasLS) {
+                // Sentinel missing but LS proves this device previously completed a successful
+                // unlock — the sentinel should still be present. Suspicious.
                 this.state.phase = 'TAMPERED';
-                console.warn('VaultGuard: sentinel missing — possible tamper detected');
+                console.warn('VaultGuard: sentinel missing on a previously-unlocked device — tamper suspected');
             } else {
                 this.state.phase = 'LOCKED';
             }
@@ -328,10 +334,33 @@ class VaultGuardPlugin extends obsidian.Plugin {
     // SENTINEL GUARD
     // ========================================================================
 
+    /**
+     * A localStorage key scoped to this specific vault path.
+     * Using a global key meant any vault on the same machine could pollute
+     * another vault's guard record, causing false tamper positives on fresh
+     * installs. The vault adapter's basePath (desktop) or vault name (mobile)
+     * gives us a stable, vault-unique identifier.
+     */
+    get _lsKey() {
+        const adapter = this.app.vault.adapter;
+        const id = (adapter.basePath ?? this.app.vault.getName())
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .slice(-60);
+        return `${LS_GUARD_KEY_PREFIX}_${id}`;
+    }
+
+    _lsClear() {
+        try {
+            window.localStorage.removeItem(this._lsKey);
+        } catch (e) {
+            console.warn('VaultGuard: localStorage clear failed', e);
+        }
+    }
+
     _lsWrite(salt) {
         try {
             window.localStorage.setItem(
-                LS_GUARD_KEY,
+                this._lsKey,
                 JSON.stringify({ v: 1, salt })
             );
         } catch (e) {
@@ -341,7 +370,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
 
     _lsRead() {
         try {
-            const raw = window.localStorage.getItem(LS_GUARD_KEY);
+            const raw = window.localStorage.getItem(this._lsKey);
             return raw ? JSON.parse(raw) : null;
         } catch {
             return null;
