@@ -1,7 +1,7 @@
 {
 	"id": "vaultguard",
 	"name": "VaultGuard",
-	"version": "2.2.0",
+	"version": "2.3.0",
 	"minAppVersion": "0.12.0",
 	"description": "A secure, beautiful, and minimalist lockscreen.",
 	"author": "Uthvah",
