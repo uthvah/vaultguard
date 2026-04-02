@@ -3,7 +3,7 @@
 	"name": "VaultGuard",
 	"version": "2.3.0",
 	"minAppVersion": "0.12.0",
-	"description": "A secure, beautiful, and minimalist lockscreen.",
+	"description": "Secure your vault with a beautiful lockscreen and industry-standard AES-GCM encryption.",
 	"author": "Uthvah",
 	"authorUrl": "https://github.com/uthvah",
 	"isDesktopOnly": false
