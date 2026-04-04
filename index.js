@@ -780,6 +780,93 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     // ========================================================================
+    // WINDOW FRAME DETECTION & CONTROLS
+    // ========================================================================
+
+    getFrameStyle() {
+        // Detected from body classes set by Obsidian at startup — authoritative,
+        // unlike app.vault.config which does not expose this in the plugin API.
+        //   is-frameless + is-hidden-frameless → 'hidden'  (default)
+        //   is-frameless only                  → 'obsidian' (Obsidian custom bar)
+        //   neither                            → 'native'   (OS titlebar)
+        const body = document.body;
+        if (!body.classList.contains('is-frameless')) return 'native';
+        if (body.classList.contains('is-hidden-frameless')) return 'hidden';
+        return 'obsidian';
+    }
+
+    _platform() {
+        try { return process.platform; } catch { return 'unknown'; }
+    }
+
+    // Show a themed navbar for hidden and obsidian styles — native lets the OS handle it.
+    get needsNavbar() {
+        return this.getFrameStyle() !== 'native';
+    }
+
+    // On non-macOS with hidden or obsidian frame, our navbar covers Electron's own
+    // window controls (web content) — render replacements.
+    // macOS: traffic lights are native OS overlays above all web content, always visible.
+    get needsWindowControls() {
+        return this.needsNavbar && this._platform() !== 'darwin';
+    }
+
+    createWindowControls() {
+        const bar = document.createElement('div');
+        bar.className = 'vg-window-controls';
+
+        const buttons = [
+            {
+                cls: 'vg-wc-min',
+                label: 'Minimize',
+                svg: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="1" y1="5" x2="9" y2="5"/></svg>',
+                action: 'minimize',
+            },
+            {
+                cls: 'vg-wc-max',
+                label: 'Maximize',
+                svg: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="1" y="1" width="8" height="8"/></svg>',
+                action: 'maximize',
+            },
+            {
+                cls: 'vg-wc-close',
+                label: 'Close',
+                svg: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>',
+                action: 'close',
+            },
+        ];
+
+        for (const { cls, label, svg, action } of buttons) {
+            const btn = bar.createEl('button', {
+                cls: `vg-wc-btn ${cls}`,
+                attr: { 'aria-label': label },
+            });
+            btn.innerHTML = svg;
+            btn.addEventListener('click', () => this._winAction(action));
+        }
+
+        return bar;
+    }
+
+    _winAction(action) {
+        // Path 1: Electron remote module (Obsidian ≤ 0.x / some 1.x builds)
+        try {
+            const electron = window.require('electron');
+            const win = electron.remote?.getCurrentWindow?.();
+            if (win) {
+                if (action === 'minimize') { win.minimize(); return; }
+                if (action === 'maximize') { win.isMaximized() ? win.unmaximize() : win.maximize(); return; }
+                if (action === 'close')    { win.close(); return; }
+            }
+        } catch {}
+
+        // Path 2: Obsidian command fallback (close only)
+        if (action === 'close') {
+            try { this.app.commands.executeCommandById('app:quit'); } catch {}
+        }
+    }
+
+    // ========================================================================
     // LOCK SCREEN UI
     // ========================================================================
 
@@ -801,7 +888,10 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     _buildLockScreenUI(el) {
-        el.createDiv({ cls: 'vaultguard-titlebar' });
+        if (this.needsNavbar) {
+            const navbar = el.createDiv({ cls: 'vaultguard-navbar' });
+            if (this.needsWindowControls) navbar.appendChild(this.createWindowControls());
+        }
         const mainContentEl = el.createDiv({ cls: 'vaultguard-main-content' });
         mainContentEl.appendChild(this.createBackgroundElement());
         mainContentEl.appendChild(this.createOverlayElement());
@@ -822,8 +912,10 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     _buildTamperedUI(el) {
-        // Titlebar so the window remains draggable on desktop
-        el.createDiv({ cls: 'vaultguard-titlebar' });
+        if (this.needsNavbar) {
+            const navbar = el.createDiv({ cls: 'vaultguard-navbar' });
+            if (this.needsWindowControls) navbar.appendChild(this.createWindowControls());
+        }
 
         const screen = el.createDiv({ cls: 'vaultguard-tamper-screen' });
         const panel  = screen.createDiv({ cls: 'vaultguard-tamper-panel' });
