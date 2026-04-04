@@ -20,6 +20,16 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  /* ── Shared glass surface tokens ────────────────────────────────────────────
+     All panels, navbar, and input decorations derive from these.
+     Changing one variable updates every surface for instant cohesion. */
+  --vg-glass-bg:        rgba(255, 255, 255, 0.10);
+  --vg-glass-blur:      blur(30px) saturate(190%);
+  --vg-glass-border:    rgba(255, 255, 255, 0.18);
+  --vg-glass-highlight: rgba(255, 255, 255, 0.18);
+  --vg-glass-shadow:    0 20px 56px rgba(0, 0, 0, 0.50);
+  --vg-glass-radius:    28px;
 }
 
 .vaultguard-screen-loading {
@@ -33,35 +43,38 @@
 }
 
 .vaultguard-screen.is-leaving {
-  animation: unlockOut 0.45s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: unlockOut 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 @keyframes unlockOut {
   0%   { opacity: 1; transform: scale(1); filter: blur(0px); }
-  100% { opacity: 0; transform: scale(1.04); filter: blur(2px); }
+  100% { opacity: 0; transform: scale(1.07); filter: blur(6px); }
 }
 
 /* ============================================================================
    NAVBAR — shown for hidden and obsidian frame styles.
-   Matches Obsidian's titlebar background so it blends seamlessly.
+   Glass treatment is driven by the same surface tokens as the password bar,
+   so both elements always look visually unified across all atmospheres.
    native frame: omitted entirely (OS chrome handles it).
    ============================================================================ */
 
 .vaultguard-navbar {
   flex-shrink: 0;
-  height: 34px;
+  height: 33px;
   width: 100%;
   -webkit-app-region: drag;
-  background-color: var(--titlebar-background, var(--background-secondary));
+  background: var(--vg-glass-bg);
+  backdrop-filter: var(--vg-glass-blur);
+  -webkit-backdrop-filter: var(--vg-glass-blur);
+  border-bottom: 1px solid var(--vg-glass-border);
+  /* Top highlight + bottom fade — visually reads as thick glass */
+  box-shadow:
+    inset 0 1px 0 var(--vg-glass-highlight),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
   position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
-}
-
-/* Match Obsidian's own focused-window titlebar colour */
-body.is-focused .vaultguard-navbar {
-  background-color: var(--titlebar-background-focused, var(--background-secondary-alt));
 }
 
 /* ============================================================================
@@ -84,7 +97,7 @@ body.is-focused .vaultguard-navbar {
   width: 46px;
   border: none;
   background: transparent;
-  color: var(--titlebar-text-color, rgba(255, 255, 255, 0.55));
+  color: rgba(255, 255, 255, 0.60);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -101,8 +114,8 @@ body.is-focused .vaultguard-navbar {
 }
 
 .vg-wc-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--titlebar-text-color, white);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
 }
 
 .vg-wc-close:hover {
@@ -120,9 +133,8 @@ body.is-focused .vaultguard-navbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeInContent 0.6s 0.1s ease-in-out forwards;
+  animation: fadeInContent 0.45s 0.08s ease-in-out forwards;
   opacity: 0;
-  /* Prevent content from being selectable */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -158,10 +170,9 @@ body.is-focused .vaultguard-navbar {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(5px) saturate(120%);
-  -webkit-backdrop-filter: blur(5px) saturate(120%);
-  /* Prevent interaction */
+  background-color: rgba(0, 0, 0, var(--vg-overlay-opacity, 0.30));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   pointer-events: none;
   user-select: none;
 }
@@ -173,20 +184,54 @@ body.is-focused .vaultguard-navbar {
 .vaultguard-content {
   position: relative;
   z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  animation: slideUpIn 0.7s 0.2s cubic-bezier(0.25, 1, 0.5, 1) forwards,
-             fadeInContent 0.7s 0.2s ease-in-out forwards;
-  transform: translateY(20px);
-  transition: transform 0.3s ease;
+  animation: slideUpIn 0.5s 0.12s cubic-bezier(0.25, 1, 0.5, 1) forwards,
+             fadeInContent 0.5s 0.12s ease-in-out forwards;
+  transform: translateY(12px);
   opacity: 0;
-  /* Allow interaction with children */
   pointer-events: auto;
-  /* Ensure content is above everything */
   isolation: isolate;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   --vaultguard-base-font: 1rem;
   font-family: var(--vaultguard-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================================
+   TILE GRID — master-stack tiling layout (Hyprland dwindle style)
+   First widget = master pane (left, full height)
+   Remaining widgets = stack pane (right, split equally)
+   To add a widget: push to WIDGET_REGISTRY in index.js
+   ============================================================================ */
+
+.vg-tile-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 20px;
+  width: min(900px, 88vw);
+  height: min(480px, 70vh);
+}
+
+.vg-tile-single {
+  grid-template-columns: 1fr;
+  width: min(460px, 88vw);
+}
+
+.vg-tile-master {
+  height: 100%;
+}
+
+.vg-tile-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+}
+
+.vg-tile-item {
+  flex: 1;
+  min-height: 0;
 }
 
 @keyframes slideUpIn {
@@ -196,54 +241,101 @@ body.is-focused .vaultguard-navbar {
 }
 
 /* ============================================================================
+   WIDGET PANELS — shared glass surface
+   ============================================================================ */
+
+.vg-time-widget,
+.vg-login-card {
+  background: var(--vg-glass-bg);
+  backdrop-filter: var(--vg-glass-blur);
+  -webkit-backdrop-filter: var(--vg-glass-blur);
+  border: 1px solid var(--vg-glass-border);
+  border-radius: var(--vg-glass-radius);
+  box-shadow:
+    var(--vg-glass-shadow),
+    inset 0 1px 0 var(--vg-glass-highlight);
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.vg-time-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10px * var(--vaultguard-ui-scale, 1));
+  padding: calc(28px * var(--vaultguard-ui-scale, 1)) calc(40px * var(--vaultguard-ui-scale, 1));
+}
+
+.vg-login-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(20px * var(--vaultguard-ui-scale, 1));
+  padding: calc(32px * var(--vaultguard-ui-scale, 1)) calc(36px * var(--vaultguard-ui-scale, 1)) calc(28px * var(--vaultguard-ui-scale, 1));
+}
+
+/* ============================================================================
    USERNAME DISPLAY
    ============================================================================ */
 
 .vaultguard-username {
-  font-size: calc(38px * var(--vaultguard-ui-scale, 1));
-  margin-bottom: calc(25px * var(--vaultguard-ui-scale, 1));
-  text-shadow: 0px 2px 12px rgba(0, 0, 0, 0.5);
+  font-size: calc(34px * var(--vaultguard-ui-scale, 1));
+  text-shadow: 0px 1px 8px rgba(0, 0, 0, 0.5);
   font-family: var(--vaultguard-font-family, inherit);
   font-weight: var(--vaultguard-font-weight, 500);
   font-style: var(--vaultguard-font-style, normal);
-  /* Prevent selection */
   user-select: none;
   -webkit-user-select: none;
-  /* Ensure it stays above overlay */
-  position: relative;
-  z-index: 10;
 }
 
 .vaultguard-clock {
   font-size: calc(72px * var(--vaultguard-ui-scale, 1));
-  font-weight: 200;
-  letter-spacing: -0.02em;
+  font-weight: 300;
+  letter-spacing: -0.03em;
   color: rgba(255,255,255,0.92);
   text-shadow: 0 2px 20px rgba(0,0,0,0.3);
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-family: var(--vaultguard-font-family, inherit);
 }
 
 .vaultguard-date {
-  font-size: calc(13px * var(--vaultguard-ui-scale, 1));
-  font-weight: 400;
-  color: rgba(255,255,255,0.50);
+  font-size: calc(12px * var(--vaultguard-ui-scale, 1));
+  font-weight: 500;
+  color: rgba(255,255,255,0.78);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: calc(40px * var(--vaultguard-ui-scale, 1));
   font-family: var(--vaultguard-font-family, inherit);
+  text-shadow: 0 1px 6px rgba(0,0,0,0.45);
 }
 
 /* ============================================================================
-   PASSWORD INPUT WRAPPER & INPUT (CORRECTED FOR GLASSMORPHISM)
+   ANALOGUE CLOCK
+   ============================================================================ */
+
+.vg-analogue-clock {
+  /* Fills the widget's flex space while staying square */
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: min(100%, 220px);
+  aspect-ratio: 1 / 1;
+  display: block;
+  overflow: visible;
+}
+
+/* ============================================================================
+   PASSWORD INPUT WRAPPER & INPUT
    ============================================================================ */
 
 .vaultguard-password-wrapper {
   position: relative;
   width: var(--vaultguard-input-width, 340px);
-  max-width: 90vw;
+  /* Constrained to card width in the tiling layout */
+  max-width: 100%;
   transition: width 0.3s ease;
   z-index: 10;
 }
@@ -252,56 +344,60 @@ body.is-focused .vaultguard-navbar {
   animation: shake 0.4s linear;
 }
 
-/* This is the corrected rule for the input bar */
+/* Input bar — "carved into" the glass card */
 .vaultguard-screen .vaultguard-input {
   width: 100%;
-  
-  /* [THE FIX] Dark, translucent background for the glass effect */
-  background: rgba(10, 10, 10, 0.25) !important; 
-  
-  /* [THE FIX] The essential blur effect */
-  backdrop-filter: blur(12px) saturate(150%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
-  
-  /* A subtle border to define the "edge" of the glass */
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  
+  background: rgba(0, 0, 0, 0.22) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* Top shadow reads as a carved recess; bottom edge gives subtle lift */
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.30),
+    inset 0 1px 2px rgba(0, 0, 0, 0.20),
+    0 1px 0 rgba(255, 255, 255, 0.06);
   border-radius: calc(var(--vaultguard-input-radius, 100) * 1px);
-  color: white;
-  padding: calc(16px * var(--vaultguard-ui-scale, 1)) calc(30px * var(--vaultguard-ui-scale, 1));
+  color: rgba(255, 255, 255, 0.95);
+  padding: calc(15px * var(--vaultguard-ui-scale, 1)) calc(28px * var(--vaultguard-ui-scale, 1));
   font-size: calc(14px * var(--vaultguard-ui-scale, 1));
-  letter-spacing: 0.5em;
+  letter-spacing: 0.22em;
   text-align: center;
   box-sizing: border-box;
   outline: none;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   user-select: text;
   -webkit-user-select: text;
-
-  /* Adds a subtle shadow to the text for better readability */
-  text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  caret-color: rgba(255, 255, 255, 0.80);
 }
 
-.vaultguard-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
-  letter-spacing: 0.1em;
+.vaultguard-screen .vaultguard-input::placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+  letter-spacing: 0.06em;
   text-shadow: none;
 }
 
-/* Ensure the focus state also maintains the glass effect */
 .vaultguard-screen .vaultguard-input:focus {
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2),
-              0 0 0 2px rgba(255, 255, 255, 0.1) inset;
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.30),
+    inset 0 1px 2px rgba(0, 0, 0, 0.20),
+    0 0 0 3px rgba(255, 255, 255, 0.10),
+    0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .vaultguard-input.is-error {
-  border-color: #e74c3c !important;
+  border-color: rgba(255, 90, 90, 0.65) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 0 3px rgba(255, 80, 80, 0.16) !important;
 }
 
 .vaultguard-input.is-success {
-  border-color: #2ecc71 !important;
+  border-color: rgba(80, 220, 120, 0.65) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 0 3px rgba(80, 220, 130, 0.16) !important;
 }
 
 @keyframes shake {
@@ -659,15 +755,40 @@ body.is-focused .vaultguard-navbar {
    RESPONSIVE ADJUSTMENTS
    ============================================================================ */
 
-@media (max-width: 768px) {
-  .vaultguard-username {
-    font-size: calc(32px * var(--vaultguard-ui-scale, 1));
-    margin-bottom: calc(20px * var(--vaultguard-ui-scale, 1));
+/* Small window: stack tiles vertically so neither panel is crushed */
+@media (max-width: 640px) {
+  .vg-tile-grid {
+    grid-template-columns: 1fr;
+    width: min(440px, 88vw);
+    height: auto;
   }
 
-  .vaultguard-input {
-    font-size: calc(16px * var(--vaultguard-ui-scale, 1));
-    padding: calc(14px * var(--vaultguard-ui-scale, 1)) calc(25px * var(--vaultguard-ui-scale, 1));
+  .vg-tile-master,
+  .vg-tile-stack {
+    height: auto;
+  }
+
+  .vg-tile-item {
+    flex: none;
+  }
+
+  .vg-time-widget,
+  .vg-login-card {
+    height: auto;
+  }
+
+  .vg-time-widget {
+    min-height: 200px;
+  }
+
+  .vg-login-card {
+    min-height: 140px;
+  }
+}
+
+@media (max-width: 768px) {
+  .vaultguard-username {
+    font-size: calc(26px * var(--vaultguard-ui-scale, 1));
   }
 
   .vaultguard-thumbnail-grid {
@@ -702,7 +823,9 @@ body.is-focused .vaultguard-navbar {
     .vaultguard-main-content,
     .vaultguard-content,
     .vaultguard-input,
-    .vaultguard-thumbnail-item {
+    .vaultguard-thumbnail-item,
+    .vg-time-widget,
+    .vg-login-card {
         animation: none !important;
         transition: none !important;
         opacity: 1 !important;
@@ -714,36 +837,6 @@ body.is-focused .vaultguard-navbar {
     }
 }
 
-/* === ATMOSPHERE VARIANTS === */
-[data-atmosphere="noir"] .vaultguard-overlay {
-  background-color: rgba(0,0,0,0.75);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  animation: none;
-}
-[data-atmosphere="noir"] .vaultguard-screen .vaultguard-input {
-  border-radius: 4px !important;
-  background: rgba(0,0,0,0.65) !important;
-  border: 1px solid rgba(255,255,255,0.22) !important;
-}
-[data-atmosphere="frosted"] .vaultguard-overlay {
-  background-color: rgba(255,255,255,0.10);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-}
-[data-atmosphere="frosted"] .vaultguard-screen .vaultguard-input {
-  background: rgba(255,255,255,0.18) !important;
-  border-color: rgba(255,255,255,0.30) !important;
-}
-[data-atmosphere="vivid"] .vaultguard-overlay {
-  background: linear-gradient(135deg, rgba(99,102,241,0.45) 0%, rgba(168,85,247,0.45) 100%);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-[data-atmosphere="vivid"] .vaultguard-screen .vaultguard-input {
-  border-color: rgba(168,85,247,0.7) !important;
-  box-shadow: 0 0 0 1px rgba(168,85,247,0.3), 0 4px 20px rgba(0,0,0,0.2) !important;
-}
 /* ============================================================================
    TAMPER WARNING / DANGER ZONE
    ============================================================================ */
