@@ -37,7 +37,13 @@ const DEFAULT_SETTINGS = {
         fontWeight: '500',
         fontStyle: 'normal',
         clockFormat: '24h',
-        atmosphere: 'minimal',
+        clockStyle: 'digital',
+        overlayOpacity: 30,
+        widgets: {
+            showDate: true,
+            showUsername: true,
+            clock: true,
+        },
         inputRadius: 100,
         shakeIntensity: 6,
     }
@@ -194,6 +200,173 @@ class ProgressModal extends obsidian.Modal {
         setTimeout(() => this.close(), 800);
     }
 }
+
+// ============================================================================
+// ANALOGUE CLOCK HELPERS
+// ============================================================================
+
+function buildAnalogueClockSVG() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('class', 'vg-analogue-clock');
+    svg.setAttribute('aria-hidden', 'true');
+
+    // Outer ring
+    const ring = document.createElementNS(ns, 'circle');
+    ring.setAttribute('cx', '100'); ring.setAttribute('cy', '100');
+    ring.setAttribute('r', '88');
+    ring.setAttribute('fill', 'none');
+    ring.setAttribute('stroke', 'rgba(255,255,255,0.30)');
+    ring.setAttribute('stroke-width', '1.5');
+    svg.appendChild(ring);
+
+    // Hour tick marks — 12 ticks, 4 quarter ticks longer/bolder
+    for (let i = 0; i < 12; i++) {
+        const isQ = i % 3 === 0;
+        const angle = (i * 30) * Math.PI / 180;
+        const inner = isQ ? 75 : 80;
+        const tick = document.createElementNS(ns, 'line');
+        tick.setAttribute('x1', (100 + Math.sin(angle) * inner).toFixed(3));
+        tick.setAttribute('y1', (100 - Math.cos(angle) * inner).toFixed(3));
+        tick.setAttribute('x2', (100 + Math.sin(angle) * 86).toFixed(3));
+        tick.setAttribute('y2', (100 - Math.cos(angle) * 86).toFixed(3));
+        tick.setAttribute('stroke', isQ ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)');
+        tick.setAttribute('stroke-width', isQ ? '2.5' : '1.5');
+        tick.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(tick);
+    }
+
+    // Hour hand — short and thick
+    const hourHand = document.createElementNS(ns, 'line');
+    hourHand.setAttribute('x1', '100'); hourHand.setAttribute('y1', '108');
+    hourHand.setAttribute('x2', '100'); hourHand.setAttribute('y2', '52');
+    hourHand.setAttribute('stroke', 'rgba(255,255,255,0.92)');
+    hourHand.setAttribute('stroke-width', '4.5');
+    hourHand.setAttribute('stroke-linecap', 'round');
+    hourHand.setAttribute('class', 'vg-clock-hour-hand');
+    svg.appendChild(hourHand);
+
+    // Minute hand — long and slender
+    const minuteHand = document.createElementNS(ns, 'line');
+    minuteHand.setAttribute('x1', '100'); minuteHand.setAttribute('y1', '105');
+    minuteHand.setAttribute('x2', '100'); minuteHand.setAttribute('y2', '26');
+    minuteHand.setAttribute('stroke', 'rgba(255,255,255,0.78)');
+    minuteHand.setAttribute('stroke-width', '2.5');
+    minuteHand.setAttribute('stroke-linecap', 'round');
+    minuteHand.setAttribute('class', 'vg-clock-minute-hand');
+    svg.appendChild(minuteHand);
+
+    // Second hand — hair-thin with counterweight tail
+    const secondHand = document.createElementNS(ns, 'line');
+    secondHand.setAttribute('x1', '100'); secondHand.setAttribute('y1', '118');
+    secondHand.setAttribute('x2', '100'); secondHand.setAttribute('y2', '22');
+    secondHand.setAttribute('stroke', 'rgba(255,255,255,0.58)');
+    secondHand.setAttribute('stroke-width', '1.5');
+    secondHand.setAttribute('stroke-linecap', 'round');
+    secondHand.setAttribute('class', 'vg-clock-second-hand');
+    svg.appendChild(secondHand);
+
+    // Center cap
+    const cap = document.createElementNS(ns, 'circle');
+    cap.setAttribute('cx', '100'); cap.setAttribute('cy', '100');
+    cap.setAttribute('r', '4');
+    cap.setAttribute('fill', 'rgba(255,255,255,0.90)');
+    svg.appendChild(cap);
+
+    return svg;
+}
+
+function updateAnalogueClock(svgEl, dateEl) {
+    const now = new Date();
+    const h = now.getHours() % 12;
+    const m = now.getMinutes();
+    const s = now.getSeconds();
+
+    // Smooth continuous motion — each hand interpolates sub-unit
+    const hourDeg   = h * 30 + m * 0.5 + s * (0.5 / 60);
+    const minuteDeg = m * 6 + s * 0.1;
+    const secondDeg = s * 6;
+
+    const hourHand   = svgEl.querySelector('.vg-clock-hour-hand');
+    const minuteHand = svgEl.querySelector('.vg-clock-minute-hand');
+    const secondHand = svgEl.querySelector('.vg-clock-second-hand');
+
+    if (hourHand)   hourHand.setAttribute('transform',   `rotate(${hourDeg.toFixed(3)}, 100, 100)`);
+    if (minuteHand) minuteHand.setAttribute('transform', `rotate(${minuteDeg.toFixed(3)}, 100, 100)`);
+    if (secondHand) secondHand.setAttribute('transform', `rotate(${secondDeg.toFixed(3)}, 100, 100)`);
+
+    if (dateEl) {
+        dateEl.textContent = now.toLocaleDateString(undefined, {
+            weekday: 'long', month: 'long', day: 'numeric'
+        });
+    }
+}
+
+// ============================================================================
+// WIDGET REGISTRY
+// Each entry: { id, label, alwaysOn, isEnabled(visual)?, render(plugin) }
+// - alwaysOn: never filtered by user prefs
+// - isEnabled: optional extra gate (e.g. clock respects clockFormat setting)
+// - render: returns an HTMLElement; may set plugin.clockInterval etc.
+// To add a new widget: push a new descriptor here and add a toggle in settings.
+// ============================================================================
+
+const WIDGET_REGISTRY = [
+    {
+        id: 'clock',
+        label: 'Clock',
+        alwaysOn: false,
+        isEnabled: (visual) => visual.clockFormat !== 'off',
+        render(plugin) {
+            const visual  = plugin.state.settings.visual;
+            const widgets = visual.widgets ?? {};
+            const el = document.createElement('div');
+            el.className = 'vg-time-widget';
+
+            let dateEl = null;
+            if (widgets.showDate !== false) {
+                dateEl = document.createElement('div');
+                dateEl.className = 'vaultguard-date';
+            }
+
+            if (visual.clockStyle === 'analogue') {
+                const svg = buildAnalogueClockSVG();
+                el.appendChild(svg);
+                if (dateEl) el.appendChild(dateEl);
+                updateAnalogueClock(svg, dateEl);
+                plugin.clockInterval = setInterval(() => updateAnalogueClock(svg, dateEl), 1000);
+            } else {
+                const clockEl = document.createElement('div');
+                clockEl.className = 'vaultguard-clock';
+                el.appendChild(clockEl);
+                if (dateEl) el.appendChild(dateEl);
+                plugin.updateClock(clockEl, dateEl);
+                plugin.clockInterval = setInterval(() => plugin.updateClock(clockEl, dateEl), 1000);
+            }
+            return el;
+        }
+    },
+    {
+        id: 'login',
+        label: 'Login',
+        alwaysOn: true,
+        render(plugin) {
+            const visual = plugin.state.settings.visual;
+            const widgets = visual.widgets ?? {};
+            const card = document.createElement('div');
+            card.className = 'vg-login-card';
+            if (widgets.showUsername !== false) {
+                const username = document.createElement('div');
+                username.className = 'vaultguard-username';
+                username.textContent = visual.username;
+                card.appendChild(username);
+            }
+            card.appendChild(plugin.createPasswordInputElement());
+            return card;
+        }
+    }
+];
 
 // ============================================================================
 // MAIN PLUGIN CLASS
@@ -888,13 +1061,15 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     _buildLockScreenUI(el) {
+        // Background and overlay are position:absolute on the screen root so they
+        // extend behind the navbar as well as the main content area.
+        el.appendChild(this.createBackgroundElement());
+        el.appendChild(this.createOverlayElement());
         if (this.needsNavbar) {
             const navbar = el.createDiv({ cls: 'vaultguard-navbar' });
             if (this.needsWindowControls) navbar.appendChild(this.createWindowControls());
         }
         const mainContentEl = el.createDiv({ cls: 'vaultguard-main-content' });
-        mainContentEl.appendChild(this.createBackgroundElement());
-        mainContentEl.appendChild(this.createOverlayElement());
         mainContentEl.appendChild(this.createContentElement());
         setTimeout(() => {
             const input = this.lockScreenEl?.querySelector('.vaultguard-input');
@@ -960,7 +1135,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
             // Render a stripped-down panel: warning + password input only.
             this._buildTamperedUI(this.lockScreenEl);
         } else {
-            this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
+            this.lockScreenEl.style.setProperty('--vg-overlay-opacity', ((this.state.settings.visual.overlayOpacity ?? 30) / 100).toString());
             this._buildLockScreenUI(this.lockScreenEl);
         }
     }
@@ -977,7 +1152,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
         if (this.state.phase === 'TAMPERED') {
             this._buildTamperedUI(this.lockScreenEl);
         } else {
-            this.lockScreenEl.setAttribute('data-atmosphere', this.state.settings.visual.atmosphere || 'minimal');
+            this.lockScreenEl.style.setProperty('--vg-overlay-opacity', ((this.state.settings.visual.overlayOpacity ?? 30) / 100).toString());
             this._buildLockScreenUI(this.lockScreenEl);
         }
     }
@@ -1014,9 +1189,10 @@ class VaultGuardPlugin extends obsidian.Plugin {
         const content = document.createElement('div');
         content.className = 'vaultguard-content';
 
-        const visual = this.state.settings.visual;
+        const visual      = this.state.settings.visual;
+        const widgetPrefs = visual.widgets ?? {};
 
-        // Apply CSS custom properties
+        // CSS custom properties
         content.style.setProperty('--vaultguard-ui-scale', (visual.uiScale / 100).toString());
         content.style.setProperty('--vaultguard-input-width', `${visual.inputWidth}px`);
         content.style.setProperty('--vaultguard-input-radius', String(visual.inputRadius ?? 100));
@@ -1027,19 +1203,44 @@ class VaultGuardPlugin extends obsidian.Plugin {
         content.style.setProperty('--vaultguard-font-weight', visual.fontWeight);
         content.style.setProperty('--vaultguard-font-style', visual.fontStyle);
 
-        // Clock
-        const clockEl = content.createEl('div', { cls: 'vaultguard-clock' });
-        const dateEl = content.createEl('div', { cls: 'vaultguard-date' });
-        this.updateClock(clockEl, dateEl);
-        this.clockInterval = setInterval(() => this.updateClock(clockEl, dateEl), 1000);
+        // Build enabled widget list from registry
+        const enabled = WIDGET_REGISTRY.filter(w =>
+            w.alwaysOn ||
+            (widgetPrefs[w.id] !== false && (!w.isEnabled || w.isEnabled(visual)))
+        );
 
-        // Username display
-        const username = content.createEl('div', { cls: 'vaultguard-username' });
-        username.textContent = visual.username;
+        // Tiling grid — master-stack layout
+        const grid = document.createElement('div');
+        grid.className = 'vg-tile-grid';
 
-        // Password input
-        content.appendChild(this.createPasswordInputElement());
+        if (enabled.length <= 1) {
+            // Single widget (clock off): full-width fallback
+            grid.classList.add('vg-tile-single');
+            const item = document.createElement('div');
+            item.className = 'vg-tile-item';
+            item.appendChild(enabled[0].render(this));
+            grid.appendChild(item);
+        } else {
+            // First widget → master pane (left); rest → stack pane (right)
+            const [master, ...stack] = enabled;
 
+            const masterEl = document.createElement('div');
+            masterEl.className = 'vg-tile-master';
+            masterEl.appendChild(master.render(this));
+            grid.appendChild(masterEl);
+
+            const stackEl = document.createElement('div');
+            stackEl.className = 'vg-tile-stack';
+            for (const widget of stack) {
+                const item = document.createElement('div');
+                item.className = 'vg-tile-item';
+                item.appendChild(widget.render(this));
+                stackEl.appendChild(item);
+            }
+            grid.appendChild(stackEl);
+        }
+
+        content.appendChild(grid);
         return content;
     }
 
@@ -1130,7 +1331,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
         const fmt = this.state.settings.visual.clockFormat || '24h';
         if (fmt === 'off') {
             clockEl.style.display = 'none';
-            dateEl.style.display = 'none';
+            if (dateEl) dateEl.style.display = 'none';
             return;
         }
         if (fmt === '12h') {
@@ -1138,7 +1339,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
         } else {
             clockEl.textContent = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
         }
-        dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+        if (dateEl) dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     }
 
     _createWarningIcon() {
@@ -1480,16 +1681,42 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
         containerEl.createEl('h3', { text: 'Lockscreen' });
 
         new obsidian.Setting(containerEl)
-            .setName('Atmosphere')
-            .setDesc('Overall visual style of the lock screen.')
-            .addDropdown(d => d
-                .addOption('minimal', 'Minimal')
-                .addOption('noir', 'Noir')
-                .addOption('frosted', 'Frosted')
-                .addOption('vivid', 'Vivid')
-                .setValue(this.plugin.state.settings.visual.atmosphere)
+            .setName('Show date')
+            .setDesc('Display the date below the clock.')
+            .addToggle(t => t
+                .setValue(this.plugin.state.settings.visual.widgets?.showDate !== false)
                 .onChange(async v => {
-                    this.plugin.state.settings.visual.atmosphere = v;
+                    this.plugin.state.settings.visual.widgets = {
+                        ...(this.plugin.state.settings.visual.widgets ?? {}),
+                        showDate: v,
+                    };
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new obsidian.Setting(containerEl)
+            .setName('Show username')
+            .setDesc('Display the username inside the login card.')
+            .addToggle(t => t
+                .setValue(this.plugin.state.settings.visual.widgets?.showUsername !== false)
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.widgets = {
+                        ...(this.plugin.state.settings.visual.widgets ?? {}),
+                        showUsername: v,
+                    };
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new obsidian.Setting(containerEl)
+            .setName('Background darkness')
+            .setDesc('How much the background is darkened behind the lockscreen (0 = none, 60 = dark).')
+            .addSlider(s => s
+                .setLimits(0, 60, 1)
+                .setValue(this.plugin.state.settings.visual.overlayOpacity ?? 30)
+                .setDynamicTooltip()
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.overlayOpacity = v;
                     await this.plugin.saveSettings();
                 })
             );
@@ -1504,6 +1731,19 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                 .setValue(this.plugin.state.settings.visual.clockFormat)
                 .onChange(async v => {
                     this.plugin.state.settings.visual.clockFormat = v;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new obsidian.Setting(containerEl)
+            .setName('Clock style')
+            .setDesc('Digital shows a numeric readout. Analogue shows a minimal watch face.')
+            .addDropdown(d => d
+                .addOption('digital', 'Digital')
+                .addOption('analogue', 'Analogue')
+                .setValue(this.plugin.state.settings.visual.clockStyle ?? 'digital')
+                .onChange(async v => {
+                    this.plugin.state.settings.visual.clockStyle = v;
                     await this.plugin.saveSettings();
                 })
             );

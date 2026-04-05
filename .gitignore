@@ -16,5 +16,8 @@ data.json
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
+
+# VaultGuard
 data.json
 styles2.css
+locksidian-guard.json
