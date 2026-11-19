@@ -23,6 +23,7 @@ const LS_GUARD_KEY_PREFIX = 'locksidian_v1_guard';
 const DEFAULT_SETTINGS = {
     autoLockTime: 15,
     encryptNotes: false,
+    encryptOnClose: true,
     visual: {
         username: 'User',
         activeBackgroundId: 'local-video',
@@ -389,6 +390,9 @@ class VaultGuardPlugin extends obsidian.Plugin {
         this.idleTimer = null;
         this.clockInterval = null;
         this._focusTrapListener = null;
+        // Serializes lock, unlock, password change, and close-time encryption
+        // so a vault close cannot race an in-flight decrypt or encrypt.
+        this._opChain = Promise.resolve();
         
         // Bind methods
         this.resetIdleTimer = this.resetIdleTimer.bind(this);
@@ -423,6 +427,14 @@ class VaultGuardPlugin extends obsidian.Plugin {
             name: 'Lock Vault',
             callback: () => this.lock()
         });
+
+        // Obsidian awaits tasks registered on `quit` before unloading the vault,
+        // including when the window is closed or another vault is opened.
+        this.registerEvent(this.app.workspace.on('quit', (tasks) => {
+            if (tasks && typeof tasks.add === 'function') {
+                tasks.add(() => this.lockOnClose());
+            }
+        }));
         
         // Add ribbon icon
         this.addRibbonIcon("lock", "Lock Vault", () => this.lock());
@@ -606,6 +618,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
 
         const sensitiveSettings = {
             encryptNotes: this.state.settings.encryptNotes,
+            encryptOnClose: this.state.settings.encryptOnClose,
             autoLockTime: this.state.settings.autoLockTime
         };
 
@@ -627,7 +640,27 @@ class VaultGuardPlugin extends obsidian.Plugin {
     // LOCK/UNLOCK OPERATIONS
     // ========================================================================
 
+    _enqueue(task) {
+        const run = this._opChain.then(() => task());
+        // Keep the chain alive even when a task fails, so a later lock can still run.
+        this._opChain = run.then(() => {}, () => {});
+        return run;
+    }
+
     async lock() {
+        return this._enqueue(() => this._performLock());
+    }
+
+    // When note encryption and encrypt-on-close are on, closing the vault
+    // locks it and encrypts every note. Runs after any in-flight lock or unlock.
+    async lockOnClose() {
+        return this._enqueue(async () => {
+            if (!this.state.settings.encryptNotes || this.state.settings.encryptOnClose === false || this.isLocked) return;
+            await this._performLock();
+        });
+    }
+
+    async _performLock() {
         if (this.isLocked) {
             return;
         }
@@ -654,6 +687,10 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     async unlock(password, triggerEl) {
+        return this._enqueue(() => this._performUnlock(password, triggerEl));
+    }
+
+    async _performUnlock(password, triggerEl) {
         const wasTampered = this.state.phase === 'TAMPERED';
         let stored = await this.loadData() || {};
 
@@ -714,6 +751,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
                 }
                 decryptedSettings = {
                     encryptNotes: notesEncrypted,
+                    encryptOnClose: DEFAULT_SETTINGS.encryptOnClose,
                     autoLockTime: DEFAULT_SETTINGS.autoLockTime
                 };
             }
@@ -722,6 +760,8 @@ class VaultGuardPlugin extends obsidian.Plugin {
             // but keep isLocked=true until the screen is actually gone.
             this.state.encryptionKey = key;
             this.state.settings.encryptNotes = !!decryptedSettings.encryptNotes;
+            // Missing value keeps the default (on) for vaults saved before this setting existed.
+            this.state.settings.encryptOnClose = decryptedSettings.encryptOnClose !== false;
             this.state.settings.autoLockTime = decryptedSettings.autoLockTime ?? DEFAULT_SETTINGS.autoLockTime;
 
             // Write/refresh sentinel on every successful unlock
@@ -782,6 +822,7 @@ class VaultGuardPlugin extends obsidian.Plugin {
 
         const sensitive = {
             encryptNotes: this.state.settings.encryptNotes,
+            encryptOnClose: this.state.settings.encryptOnClose !== false,
             autoLockTime: this.state.settings.autoLockTime
         };
 
@@ -803,6 +844,10 @@ class VaultGuardPlugin extends obsidian.Plugin {
     }
 
     async changePassword(currentPassword, newPassword) {
+        return this._enqueue(() => this._performChangePassword(currentPassword, newPassword));
+    }
+
+    async _performChangePassword(currentPassword, newPassword) {
         const stored = await this.loadData();
 
         if (!stored?.salt) {
@@ -1886,25 +1931,39 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
                     .onChange(async value => {
                         this.plugin.state.settings.encryptNotes = value;
                         await this.plugin.saveSettings();
-                        new obsidian.Notice('Encryption will activate on next lock.');
+                        const when = this.plugin.state.settings.encryptOnClose === false ? 'locked' : 'locked or closed';
+                        new obsidian.Notice(`Notes will be encrypted the next time the vault is ${when}.`);
                     })
                 );
         } else {
             const dangerZone = containerEl.createDiv({ cls: 'vaultguard-danger-zone' });
             dangerZone.createEl('p', {
-                text: 'Note encryption is active. Notes are encrypted on lock and decrypted on unlock. Disabling will immediately decrypt all notes.'
+                text: 'Note encryption is active. Notes are encrypted when the vault is locked and decrypted on unlock. Disabling will immediately decrypt all notes.'
             });
             const disableBtn = dangerZone.createEl('button', { text: 'Disable Note Encryption' });
             disableBtn.addEventListener('click', async () => {
                 if (confirm('Disable note encryption? This will decrypt all notes now.')) {
-                    this.plugin.state.settings.encryptNotes = false;
-                    await this.plugin.processAllNotes('decrypt', null);
-                    await this.plugin.saveSettings();
+                    await this.plugin._enqueue(async () => {
+                        this.plugin.state.settings.encryptNotes = false;
+                        await this.plugin.processAllNotes('decrypt', null);
+                        await this.plugin.saveSettings();
+                    });
                     new obsidian.Notice('Note encryption disabled. All notes decrypted.');
                     this.display();
                 }
             });
         }
+
+        new obsidian.Setting(containerEl)
+            .setName('Encrypt when closing vault')
+            .setDesc('Lock the vault and encrypt every note when this vault is closed. Applies while note encryption is on.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.state.settings.encryptOnClose !== false)
+                .onChange(async value => {
+                    this.plugin.state.settings.encryptOnClose = value;
+                    await this.plugin.saveSettings();
+                })
+            );
     }
 
     renderThumbnailGrid(containerEl) {
@@ -1985,7 +2044,7 @@ class VaultGuardSettingsTab extends obsidian.PluginSettingTab {
 
     createWarningFragment() {
         const frag = document.createDocumentFragment();
-        frag.append('When enabled, all .md files will be encrypted on manual lock and decrypted on unlock. ');
+        frag.append('When enabled, all .md files will be encrypted when the vault is locked and decrypted on unlock. ');
 
         const strong = document.createElement('strong');
         strong.textContent = 'WARNING: This is an irreversible action. Always back up your vault before enabling.';
